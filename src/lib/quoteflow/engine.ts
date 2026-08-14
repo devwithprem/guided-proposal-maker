@@ -225,7 +225,7 @@ export function slugToVariable(label: string) {
 }
 
 export function flowVariables(flow: Flow) {
-  const vars: { variable: string; label: string; options?: { label: string; value: string }[]; type: string }[] = [];
+  const vars: { variable: string; label: string; options?: { label: string; value: string }[] | undefined; type: string }[] = [];
   for (const c of flow.components) {
     if (c.variable) vars.push({ variable: c.variable, label: c.label, options: c.options, type: c.type });
     if (c.type === "calculation" && c.calculation)
