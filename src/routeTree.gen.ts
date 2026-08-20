@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as FlowsIndexRouteImport } from './routes/flows.index'
+import { Route as FlowsFlowIdRouteImport } from './routes/flows.$flowId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,30 +23,39 @@ const FlowsIndexRoute = FlowsIndexRouteImport.update({
   path: '/flows/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FlowsFlowIdRoute = FlowsFlowIdRouteImport.update({
+  id: '/flows/$flowId',
+  path: '/flows/$flowId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows/': typeof FlowsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows': typeof FlowsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows/': typeof FlowsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/flows/'
+  fullPaths: '/' | '/flows/$flowId' | '/flows/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/flows'
-  id: '__root__' | '/' | '/flows/'
+  to: '/' | '/flows/$flowId' | '/flows'
+  id: '__root__' | '/' | '/flows/$flowId' | '/flows/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FlowsFlowIdRoute: typeof FlowsFlowIdRoute
   FlowsIndexRoute: typeof FlowsIndexRoute
 }
 
@@ -65,11 +75,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FlowsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/flows/$flowId': {
+      id: '/flows/$flowId'
+      path: '/flows/$flowId'
+      fullPath: '/flows/$flowId'
+      preLoaderRoute: typeof FlowsFlowIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FlowsFlowIdRoute: FlowsFlowIdRoute,
   FlowsIndexRoute: FlowsIndexRoute,
 }
 export const routeTree = rootRouteImport
