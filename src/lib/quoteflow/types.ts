@@ -32,15 +32,15 @@ export interface FlowComponent {
   id: string;
   type: ComponentType;
   label: string;
-  description?: string;
-  variable?: string;
-  required?: boolean;
-  min?: number;
-  max?: number;
-  unit?: string;
-  options?: Option[];
+  description?: string | undefined;
+  variable?: string | undefined;
+  required?: boolean | undefined;
+  min?: number | undefined;
+  max?: number | undefined;
+  unit?: string | undefined;
+  options?: Option[] | undefined;
   /** for calculation components */
-  calculation?: Calculation;
+  calculation?: Calculation | undefined;
 }
 
 export type Operator =
@@ -76,12 +76,12 @@ export interface Action {
   id: string;
   type: ActionType;
   /** product | package | question */
-  targetKind?: "product" | "package" | "question";
-  targetId?: string;
-  label?: string;
-  amount?: number;
-  variable?: string;
-  value?: string;
+  targetKind?: "product" | "package" | "question" | undefined;
+  targetId?: string | undefined;
+  label?: string | undefined;
+  amount?: number | undefined;
+  variable?: string | undefined;
+  value?: string | undefined;
 }
 
 export interface Rule {
@@ -99,9 +99,9 @@ export interface CalcTerm {
   id: string;
   /** variable name or a literal number */
   kind: "variable" | "number";
-  variable?: string;
-  number?: number;
-  operator?: CalcOperator; // operator joining this term to the previous one
+  variable?: string | undefined;
+  number?: number | undefined;
+  operator?: CalcOperator | undefined; // operator joining this term to the previous one
 }
 
 export interface Calculation {
@@ -120,7 +120,7 @@ export interface Flow {
   updatedAt: string;
   components: FlowComponent[];
   rules: Rule[];
-  basePackageId?: string;
+  basePackageId?: string | undefined;
 }
 
 export interface Product {
@@ -154,8 +154,8 @@ export interface Enquiry {
   flowId: string;
   status: EnquiryStatus;
   createdAt: string;
-  eventDate?: string;
-  location?: string;
+  eventDate?: string | undefined;
+  location?: string | undefined;
   answers: Record<string, string | number | string[]>;
   selectedAddons: string[];
   notes: string;
