@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PackagesRouteImport } from './routes/packages'
 import { Route as ProductsRouteImport } from './routes/products'
 import { Route as FlowsIndexRouteImport } from './routes/flows.index'
 import { Route as FlowsFlowIdRouteImport } from './routes/flows.$flowId'
@@ -17,6 +18,11 @@ import { Route as FlowsFlowIdRouteImport } from './routes/flows.$flowId'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PackagesRoute = PackagesRouteImport.update({
+  id: '/packages',
+  path: '/packages',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductsRoute = ProductsRouteImport.update({
@@ -37,12 +43,14 @@ const FlowsFlowIdRoute = FlowsFlowIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/packages': typeof PackagesRoute
   '/products': typeof ProductsRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows/': typeof FlowsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/packages': typeof PackagesRoute
   '/products': typeof ProductsRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows': typeof FlowsIndexRoute
@@ -50,20 +58,23 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/packages': typeof PackagesRoute
   '/products': typeof ProductsRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows/': typeof FlowsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/products' | '/flows/$flowId' | '/flows/'
+  fullPaths: '/' | '/packages' | '/products' | '/flows/$flowId' | '/flows/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/products' | '/flows/$flowId' | '/flows'
-  id: '__root__' | '/' | '/products' | '/flows/$flowId' | '/flows/'
+  to: '/' | '/packages' | '/products' | '/flows/$flowId' | '/flows'
+  id:
+    '__root__' | '/' | '/packages' | '/products' | '/flows/$flowId' | '/flows/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PackagesRoute: typeof PackagesRoute
   ProductsRoute: typeof ProductsRoute
   FlowsFlowIdRoute: typeof FlowsFlowIdRoute
   FlowsIndexRoute: typeof FlowsIndexRoute
@@ -76,6 +87,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/packages': {
+      id: '/packages'
+      path: '/packages'
+      fullPath: '/packages'
+      preLoaderRoute: typeof PackagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/products': {
@@ -104,6 +122,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PackagesRoute: PackagesRoute,
   ProductsRoute: ProductsRoute,
   FlowsFlowIdRoute: FlowsFlowIdRoute,
   FlowsIndexRoute: FlowsIndexRoute,
