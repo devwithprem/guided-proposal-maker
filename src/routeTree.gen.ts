@@ -10,12 +10,36 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PackagesRouteImport } from './routes/packages'
+import { Route as ProductsRouteImport } from './routes/products'
+import { Route as RulesRouteImport } from './routes/rules'
+import { Route as EnquiriesEnquiryIdRouteImport } from './routes/enquiries.$enquiryId'
 import { Route as FlowsIndexRouteImport } from './routes/flows.index'
 import { Route as FlowsFlowIdRouteImport } from './routes/flows.$flowId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PackagesRoute = PackagesRouteImport.update({
+  id: '/packages',
+  path: '/packages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsRoute = ProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RulesRoute = RulesRouteImport.update({
+  id: '/rules',
+  path: '/rules',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnquiriesEnquiryIdRoute = EnquiriesEnquiryIdRouteImport.update({
+  id: '/enquiries/$enquiryId',
+  path: '/enquiries/$enquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FlowsIndexRoute = FlowsIndexRouteImport.update({
@@ -31,30 +55,68 @@ const FlowsFlowIdRoute = FlowsFlowIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/packages': typeof PackagesRoute
+  '/products': typeof ProductsRoute
+  '/rules': typeof RulesRoute
+  '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows/': typeof FlowsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/packages': typeof PackagesRoute
+  '/products': typeof ProductsRoute
+  '/rules': typeof RulesRoute
+  '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows': typeof FlowsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/packages': typeof PackagesRoute
+  '/products': typeof ProductsRoute
+  '/rules': typeof RulesRoute
+  '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/flows/': typeof FlowsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/flows/$flowId' | '/flows/'
+  fullPaths:
+    | '/'
+    | '/packages'
+    | '/products'
+    | '/rules'
+    | '/enquiries/$enquiryId'
+    | '/flows/$flowId'
+    | '/flows/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/flows/$flowId' | '/flows'
-  id: '__root__' | '/' | '/flows/$flowId' | '/flows/'
+  to:
+    | '/'
+    | '/packages'
+    | '/products'
+    | '/rules'
+    | '/enquiries/$enquiryId'
+    | '/flows/$flowId'
+    | '/flows'
+  id:
+    | '__root__'
+    | '/'
+    | '/packages'
+    | '/products'
+    | '/rules'
+    | '/enquiries/$enquiryId'
+    | '/flows/$flowId'
+    | '/flows/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PackagesRoute: typeof PackagesRoute
+  ProductsRoute: typeof ProductsRoute
+  RulesRoute: typeof RulesRoute
+  EnquiriesEnquiryIdRoute: typeof EnquiriesEnquiryIdRoute
   FlowsFlowIdRoute: typeof FlowsFlowIdRoute
   FlowsIndexRoute: typeof FlowsIndexRoute
 }
@@ -66,6 +128,34 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/packages': {
+      id: '/packages'
+      path: '/packages'
+      fullPath: '/packages'
+      preLoaderRoute: typeof PackagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products': {
+      id: '/products'
+      path: '/products'
+      fullPath: '/products'
+      preLoaderRoute: typeof ProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rules': {
+      id: '/rules'
+      path: '/rules'
+      fullPath: '/rules'
+      preLoaderRoute: typeof RulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/enquiries/$enquiryId': {
+      id: '/enquiries/$enquiryId'
+      path: '/enquiries/$enquiryId'
+      fullPath: '/enquiries/$enquiryId'
+      preLoaderRoute: typeof EnquiriesEnquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/flows/': {
@@ -87,6 +177,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PackagesRoute: PackagesRoute,
+  ProductsRoute: ProductsRoute,
+  RulesRoute: RulesRoute,
+  EnquiriesEnquiryIdRoute: EnquiriesEnquiryIdRoute,
   FlowsFlowIdRoute: FlowsFlowIdRoute,
   FlowsIndexRoute: FlowsIndexRoute,
 }
