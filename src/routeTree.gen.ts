@@ -10,17 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ConnectionsRouteImport } from './routes/connections'
 import { Route as PackagesRouteImport } from './routes/packages'
 import { Route as ProductsRouteImport } from './routes/products'
 import { Route as RulesRouteImport } from './routes/rules'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as EnquiriesEnquiryIdRouteImport } from './routes/enquiries.$enquiryId'
 import { Route as FlowsIndexRouteImport } from './routes/flows.index'
 import { Route as FlowsFlowIdRouteImport } from './routes/flows.$flowId'
 import { Route as ProposalsIndexRouteImport } from './routes/proposals.index'
+import { Route as ProposalsEnquiryIdRouteImport } from './routes/proposals.$enquiryId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConnectionsRoute = ConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PackagesRoute = PackagesRouteImport.update({
@@ -36,6 +44,11 @@ const ProductsRoute = ProductsRouteImport.update({
 const RulesRoute = RulesRouteImport.update({
   id: '/rules',
   path: '/rules',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EnquiriesEnquiryIdRoute = EnquiriesEnquiryIdRouteImport.update({
@@ -58,35 +71,49 @@ const ProposalsIndexRoute = ProposalsIndexRouteImport.update({
   path: '/proposals/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProposalsEnquiryIdRoute = ProposalsEnquiryIdRouteImport.update({
+  id: '/proposals/$enquiryId',
+  path: '/proposals/$enquiryId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/connections': typeof ConnectionsRoute
   '/packages': typeof PackagesRoute
   '/products': typeof ProductsRoute
   '/rules': typeof RulesRoute
+  '/settings': typeof SettingsRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
+  '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
   '/flows/': typeof FlowsIndexRoute
   '/proposals/': typeof ProposalsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/connections': typeof ConnectionsRoute
   '/packages': typeof PackagesRoute
   '/products': typeof ProductsRoute
   '/rules': typeof RulesRoute
+  '/settings': typeof SettingsRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
+  '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
   '/flows': typeof FlowsIndexRoute
   '/proposals': typeof ProposalsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/connections': typeof ConnectionsRoute
   '/packages': typeof PackagesRoute
   '/products': typeof ProductsRoute
   '/rules': typeof RulesRoute
+  '/settings': typeof SettingsRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
+  '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
   '/flows/': typeof FlowsIndexRoute
   '/proposals/': typeof ProposalsIndexRoute
 }
@@ -94,42 +121,54 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/connections'
     | '/packages'
     | '/products'
     | '/rules'
+    | '/settings'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
+    | '/proposals/$enquiryId'
     | '/flows/'
     | '/proposals/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/connections'
     | '/packages'
     | '/products'
     | '/rules'
+    | '/settings'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
+    | '/proposals/$enquiryId'
     | '/flows'
     | '/proposals'
   id:
     | '__root__'
     | '/'
+    | '/connections'
     | '/packages'
     | '/products'
     | '/rules'
+    | '/settings'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
+    | '/proposals/$enquiryId'
     | '/flows/'
     | '/proposals/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ConnectionsRoute: typeof ConnectionsRoute
   PackagesRoute: typeof PackagesRoute
   ProductsRoute: typeof ProductsRoute
   RulesRoute: typeof RulesRoute
+  SettingsRoute: typeof SettingsRoute
   EnquiriesEnquiryIdRoute: typeof EnquiriesEnquiryIdRoute
   FlowsFlowIdRoute: typeof FlowsFlowIdRoute
+  ProposalsEnquiryIdRoute: typeof ProposalsEnquiryIdRoute
   FlowsIndexRoute: typeof FlowsIndexRoute
   ProposalsIndexRoute: typeof ProposalsIndexRoute
 }
@@ -141,6 +180,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/connections': {
+      id: '/connections'
+      path: '/connections'
+      fullPath: '/connections'
+      preLoaderRoute: typeof ConnectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/packages': {
@@ -162,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/rules'
       fullPath: '/rules'
       preLoaderRoute: typeof RulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/enquiries/$enquiryId': {
@@ -192,16 +245,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProposalsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/proposals/$enquiryId': {
+      id: '/proposals/$enquiryId'
+      path: '/proposals/$enquiryId'
+      fullPath: '/proposals/$enquiryId'
+      preLoaderRoute: typeof ProposalsEnquiryIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ConnectionsRoute: ConnectionsRoute,
   PackagesRoute: PackagesRoute,
   ProductsRoute: ProductsRoute,
   RulesRoute: RulesRoute,
+  SettingsRoute: SettingsRoute,
   EnquiriesEnquiryIdRoute: EnquiriesEnquiryIdRoute,
   FlowsFlowIdRoute: FlowsFlowIdRoute,
+  ProposalsEnquiryIdRoute: ProposalsEnquiryIdRoute,
   FlowsIndexRoute: FlowsIndexRoute,
   ProposalsIndexRoute: ProposalsIndexRoute,
 }
