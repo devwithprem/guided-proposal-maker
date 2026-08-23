@@ -54,6 +54,8 @@
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-soft: var(--brand-soft);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-ring-offset-background: var(--background);
@@ -91,6 +93,8 @@
   --brand: oklch(0.52 0.13 168);
   --brand-foreground: oklch(0.99 0.005 160);
   --brand-soft: oklch(0.955 0.025 168);
+  --ink: oklch(0.21 0.012 95);
+  --ink-foreground: oklch(0.98 0.004 100);
   --destructive: oklch(0.55 0.2 27.3);
   --destructive-foreground: oklch(0.99 0.003 100);
   --success: oklch(0.55 0.12 158);
@@ -176,4 +180,10 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-muted-foreground);
+}
+
+@utility qf-serif {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
