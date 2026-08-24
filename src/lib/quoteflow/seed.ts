@@ -363,7 +363,7 @@ function clone(flow: Flow, name: string, description: string): Flow {
     status: "draft",
     submissions: 0,
     updatedAt: new Date().toISOString().slice(0, 10),
-  };
+  });
 }
 
 export const templates: FlowTemplate[] = [
@@ -428,7 +428,7 @@ export const templates: FlowTemplate[] = [
         { id: uid("c"), type: "price-summary", label: "Price Summary" },
       ],
       rules: [],
-    })),
+    }),
   },
   {
     id: "t_blank",
@@ -445,6 +445,6 @@ export const templates: FlowTemplate[] = [
       updatedAt: new Date().toISOString().slice(0, 10),
       components: [],
       rules: [],
-    })),
+    }),
   },
 ];
