@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { seedData } from "./seed";
+import { withFlowDefaults } from "./defaults";
 import type { Enquiry, Flow, Package, Product, Proposal, WorkspaceData } from "./types";
 
 const KEY = "quoteflow.workspace.v1";
@@ -7,6 +8,10 @@ const KEY = "quoteflow.workspace.v1";
 let state: WorkspaceData = seedData();
 let hydrated = false;
 const listeners = new Set<() => void>();
+
+function normalize(data: WorkspaceData): WorkspaceData {
+  return { ...data, flows: (data.flows ?? []).map((f) => withFlowDefaults(f)) };
+}
 
 function persist() {
   try {
@@ -25,11 +30,12 @@ function hydrate() {
   hydrated = true;
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) state = { ...seedData(), ...(JSON.parse(raw) as WorkspaceData) };
+    if (raw) state = normalize({ ...seedData(), ...(JSON.parse(raw) as WorkspaceData) });
   } catch {
     /* ignore */
   }
 }
+
 
 function subscribe(cb: () => void) {
   hydrate();
