@@ -1,4 +1,5 @@
 import type { Flow, Package, Product, WorkspaceData, Enquiry } from "./types";
+import { withFlowDefaults } from "./defaults";
 
 export const products: Product[] = [
   { id: "p_std_chair", name: "Standard Chair", sku: "CHR-STD", description: "Folding banquet chair", price: 4, unit: "per chair", category: "Furniture", active: true },
@@ -55,7 +56,7 @@ export const packages: Package[] = [
   },
 ];
 
-const eventRentalFlow: Flow = {
+const eventRentalFlow: Flow = withFlowDefaults({
   id: "fl_event_rental",
   name: "Event Rental Quote",
   description: "Primary enquiry flow for marquee, furniture and production rentals.",
@@ -183,9 +184,9 @@ const eventRentalFlow: Flow = {
       actions: [{ id: "a1", type: "recommend", targetKind: "product", targetId: "p_stage" }],
     },
   ],
-};
+});
 
-const weddingFlow: Flow = {
+const weddingFlow: Flow = withFlowDefaults({
   id: "fl_wedding",
   name: "Wedding Enquiry",
   description: "Photography and coverage enquiries for weddings.",
@@ -210,9 +211,9 @@ const weddingFlow: Flow = {
       actions: [{ id: "a1", type: "recommend", targetKind: "product", targetId: "p_staffing" }],
     },
   ],
-};
+});
 
-const cateringFlow: Flow = {
+const cateringFlow: Flow = withFlowDefaults({
   id: "fl_catering",
   name: "Catering Quote",
   description: "Menu, service style and headcount based catering quotes.",
@@ -236,9 +237,9 @@ const cateringFlow: Flow = {
     { id: "ct3", type: "price-summary", label: "Price Summary" },
   ],
   rules: [],
-};
+});
 
-const landscapingFlow: Flow = {
+const landscapingFlow: Flow = withFlowDefaults({
   id: "fl_landscaping",
   name: "Landscaping Quote",
   description: "Garden design and maintenance enquiries.",
@@ -250,7 +251,7 @@ const landscapingFlow: Flow = {
     { id: "l2", type: "price-summary", label: "Price Summary" },
   ],
   rules: [],
-};
+});
 
 const enquiries: Enquiry[] = [
   {
@@ -354,7 +355,7 @@ let idc = 0;
 export const uid = (p = "id") => `${p}_${Date.now().toString(36)}${(idc++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 function clone(flow: Flow, name: string, description: string): Flow {
-  return {
+  return withFlowDefaults({
     ...structuredClone(flow),
     id: uid("fl"),
     name,
@@ -404,7 +405,7 @@ export const templates: FlowTemplate[] = [
     description: "Property size, service type and visit frequency.",
     questions: 3,
     rules: 0,
-    build: () => ({
+    build: () => withFlowDefaults({
       id: uid("fl"),
       name: "Home Service Quote",
       description: "Property size and service frequency enquiries.",
@@ -427,7 +428,7 @@ export const templates: FlowTemplate[] = [
         { id: uid("c"), type: "price-summary", label: "Price Summary" },
       ],
       rules: [],
-    }),
+    })),
   },
   {
     id: "t_blank",
@@ -435,7 +436,7 @@ export const templates: FlowTemplate[] = [
     description: "Start from an empty canvas and build your own questions and rules.",
     questions: 0,
     rules: 0,
-    build: () => ({
+    build: () => withFlowDefaults({
       id: uid("fl"),
       name: "Untitled Flow",
       description: "",
@@ -444,6 +445,6 @@ export const templates: FlowTemplate[] = [
       updatedAt: new Date().toISOString().slice(0, 10),
       components: [],
       rules: [],
-    }),
+    })),
   },
 ];
