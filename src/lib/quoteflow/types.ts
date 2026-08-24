@@ -41,7 +41,10 @@ export interface FlowComponent {
   options?: Option[] | undefined;
   /** for calculation components */
   calculation?: Calculation | undefined;
+  /** only show this question when the condition passes */
+  showWhen?: Condition | undefined;
 }
+
 
 export type Operator =
   | "equals"
@@ -111,6 +114,28 @@ export interface Calculation {
   terms: CalcTerm[];
 }
 
+export type ProposalTemplateId = "ink" | "minimal" | "editorial" | "compact";
+
+export interface FlowSettings {
+  headline: string;
+  subheadline: string;
+  submitLabel: string;
+  thankYouMessage: string;
+  showPriceSummary: boolean;
+  showRecommendations: boolean;
+  breakdown: "itemised" | "total";
+  accent: string;
+  proposalTemplate: ProposalTemplateId;
+}
+
+export interface SubmissionSettings {
+  generateProposal: "never" | "on_submit";
+  delivery: "immediate" | "review";
+  notifyEmail: string;
+  webhookUrl: string;
+  integrations: string[];
+}
+
 export interface Flow {
   id: string;
   name: string;
@@ -118,10 +143,15 @@ export interface Flow {
   status: "live" | "draft" | "paused";
   submissions: number;
   updatedAt: string;
+  /** step 1 — basic contact details */
+  contactFields: FlowComponent[];
   components: FlowComponent[];
   rules: Rule[];
   basePackageId?: string | undefined;
+  settings: FlowSettings;
+  submission: SubmissionSettings;
 }
+
 
 export interface Product {
   id: string;
