@@ -191,7 +191,12 @@ export function runEngine(opts: {
     }
   }
 
+  for (const c of [...flow.components, ...(flow.contactFields ?? [])]) {
+    if (c.showWhen && c.showWhen.variable && !evaluateCondition(c.showWhen, answers)) hiddenComponentIds.push(c.id);
+  }
+
   const recommendedProducts = products.filter((p) => recommendedIds.has(p.id) && !removedIds.has(p.id));
+
 
   const lines: QuoteLine[] = [];
   const basePackage = packages.find((p) => p.id === flow.basePackageId);
