@@ -15,6 +15,8 @@ import { Route as PackagesRouteImport } from './routes/packages'
 import { Route as ProductsRouteImport } from './routes/products'
 import { Route as RulesRouteImport } from './routes/rules'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as EmbedFlowIdRouteImport } from './routes/embed.$flowId'
+import { Route as EnquiriesIndexRouteImport } from './routes/enquiries.index'
 import { Route as EnquiriesEnquiryIdRouteImport } from './routes/enquiries.$enquiryId'
 import { Route as FlowsIndexRouteImport } from './routes/flows.index'
 import { Route as FlowsFlowIdRouteImport } from './routes/flows.$flowId'
@@ -51,6 +53,16 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EmbedFlowIdRoute = EmbedFlowIdRouteImport.update({
+  id: '/embed/$flowId',
+  path: '/embed/$flowId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnquiriesIndexRoute = EnquiriesIndexRouteImport.update({
+  id: '/enquiries/',
+  path: '/enquiries/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EnquiriesEnquiryIdRoute = EnquiriesEnquiryIdRouteImport.update({
   id: '/enquiries/$enquiryId',
   path: '/enquiries/$enquiryId',
@@ -84,9 +96,11 @@ export interface FileRoutesByFullPath {
   '/products': typeof ProductsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/embed/$flowId': typeof EmbedFlowIdRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
+  '/enquiries/': typeof EnquiriesIndexRoute
   '/flows/': typeof FlowsIndexRoute
   '/proposals/': typeof ProposalsIndexRoute
 }
@@ -97,9 +111,11 @@ export interface FileRoutesByTo {
   '/products': typeof ProductsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/embed/$flowId': typeof EmbedFlowIdRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
+  '/enquiries': typeof EnquiriesIndexRoute
   '/flows': typeof FlowsIndexRoute
   '/proposals': typeof ProposalsIndexRoute
 }
@@ -111,9 +127,11 @@ export interface FileRoutesById {
   '/products': typeof ProductsRoute
   '/rules': typeof RulesRoute
   '/settings': typeof SettingsRoute
+  '/embed/$flowId': typeof EmbedFlowIdRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
   '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
+  '/enquiries/': typeof EnquiriesIndexRoute
   '/flows/': typeof FlowsIndexRoute
   '/proposals/': typeof ProposalsIndexRoute
 }
@@ -126,9 +144,11 @@ export interface FileRouteTypes {
     | '/products'
     | '/rules'
     | '/settings'
+    | '/embed/$flowId'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
     | '/proposals/$enquiryId'
+    | '/enquiries/'
     | '/flows/'
     | '/proposals/'
   fileRoutesByTo: FileRoutesByTo
@@ -139,9 +159,11 @@ export interface FileRouteTypes {
     | '/products'
     | '/rules'
     | '/settings'
+    | '/embed/$flowId'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
     | '/proposals/$enquiryId'
+    | '/enquiries'
     | '/flows'
     | '/proposals'
   id:
@@ -152,9 +174,11 @@ export interface FileRouteTypes {
     | '/products'
     | '/rules'
     | '/settings'
+    | '/embed/$flowId'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
     | '/proposals/$enquiryId'
+    | '/enquiries/'
     | '/flows/'
     | '/proposals/'
   fileRoutesById: FileRoutesById
@@ -166,9 +190,11 @@ export interface RootRouteChildren {
   ProductsRoute: typeof ProductsRoute
   RulesRoute: typeof RulesRoute
   SettingsRoute: typeof SettingsRoute
+  EmbedFlowIdRoute: typeof EmbedFlowIdRoute
   EnquiriesEnquiryIdRoute: typeof EnquiriesEnquiryIdRoute
   FlowsFlowIdRoute: typeof FlowsFlowIdRoute
   ProposalsEnquiryIdRoute: typeof ProposalsEnquiryIdRoute
+  EnquiriesIndexRoute: typeof EnquiriesIndexRoute
   FlowsIndexRoute: typeof FlowsIndexRoute
   ProposalsIndexRoute: typeof ProposalsIndexRoute
 }
@@ -217,6 +243,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/embed/$flowId': {
+      id: '/embed/$flowId'
+      path: '/embed/$flowId'
+      fullPath: '/embed/$flowId'
+      preLoaderRoute: typeof EmbedFlowIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/enquiries/': {
+      id: '/enquiries/'
+      path: '/enquiries'
+      fullPath: '/enquiries/'
+      preLoaderRoute: typeof EnquiriesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/enquiries/$enquiryId': {
       id: '/enquiries/$enquiryId'
       path: '/enquiries/$enquiryId'
@@ -262,9 +302,11 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsRoute: ProductsRoute,
   RulesRoute: RulesRoute,
   SettingsRoute: SettingsRoute,
+  EmbedFlowIdRoute: EmbedFlowIdRoute,
   EnquiriesEnquiryIdRoute: EnquiriesEnquiryIdRoute,
   FlowsFlowIdRoute: FlowsFlowIdRoute,
   ProposalsEnquiryIdRoute: ProposalsEnquiryIdRoute,
+  EnquiriesIndexRoute: EnquiriesIndexRoute,
   FlowsIndexRoute: FlowsIndexRoute,
   ProposalsIndexRoute: ProposalsIndexRoute,
 }
