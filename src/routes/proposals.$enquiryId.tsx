@@ -1,9 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AppShell, Logo, PageHeader } from "@/components/quoteflow/AppShell";
+import { AppShell, PageHeader, StatusPill } from "@/components/quoteflow/AppShell";
+import { ProposalDocument, proposalTemplates } from "@/components/quoteflow/ProposalDocument";
 import { useActions, useWorkspace } from "@/lib/quoteflow/store";
-import { money, runEngine } from "@/lib/quoteflow/engine";
+import { runEngine } from "@/lib/quoteflow/engine";
+import type { ProposalTemplateId } from "@/lib/quoteflow/types";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Check, Download, Send } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Download, Send } from "lucide-react";
 
 export const Route = createFileRoute("/proposals/$enquiryId")({
   head: () => ({
@@ -20,7 +23,7 @@ export const Route = createFileRoute("/proposals/$enquiryId")({
 function ProposalPage() {
   const { enquiryId } = Route.useParams();
   const ws = useWorkspace();
-  const { upsertProposal } = useActions();
+  const { upsertProposal, upsertFlow } = useActions();
 
   const enquiry = ws.enquiries.find((e) => e.id === enquiryId);
   const flow = enquiry ? ws.flows.find((f) => f.id === enquiry.flowId) : undefined;
@@ -47,6 +50,8 @@ function ProposalPage() {
     selectedAddons: enquiry.selectedAddons,
   });
   const basePackage = ws.packages.find((p) => p.id === flow.basePackageId);
+  const template = flow.settings.proposalTemplate;
+  const inReview = proposal?.status === "review";
 
   return (
     <AppShell>
@@ -54,7 +59,25 @@ function ProposalPage() {
         title={proposal?.title ?? `${enquiry.business} — proposal`}
         description={`Prepared for ${enquiry.customer} · ${enquiry.email}`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {proposal && <StatusPill status={proposal.status} />}
+            <Select
+              value={template}
+              onValueChange={(v) =>
+                upsertFlow({ ...flow, settings: { ...flow.settings, proposalTemplate: v as ProposalTemplateId } })
+              }
+            >
+              <SelectTrigger className="h-8 w-[150px] text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {proposalTemplates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name} template
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button variant="outline" size="sm">
               <Download className="mr-1 h-4 w-4" /> Export PDF
             </Button>
@@ -64,7 +87,7 @@ function ProposalPage() {
               disabled={proposal?.status === "sent" || proposal?.status === "accepted"}
             >
               <Send className="mr-1 h-4 w-4" />
-              {proposal?.status === "sent" ? "Sent" : "Send to customer"}
+              {proposal?.status === "sent" ? "Sent" : inReview ? "Approve & send" : "Send to customer"}
             </Button>
           </div>
         }
@@ -79,95 +102,21 @@ function ProposalPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Back to enquiry
         </Link>
 
-        {/* Customer-facing document */}
-        <article className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-          <header className="bg-ink px-10 py-9 text-ink-foreground">
-            <div className="flex items-start justify-between">
-              <Logo className="text-ink-foreground" />
-              <div className="text-right text-[12px] opacity-80">
-                <p>Proposal #{(proposal?.id ?? "draft").slice(-6).toUpperCase()}</p>
-                <p>{proposal?.createdAt ?? new Date().toISOString().slice(0, 10)}</p>
-              </div>
-            </div>
-            <h1 className="qf-serif mt-8 text-[34px] leading-tight">
-              {basePackage?.name ?? "Your custom quote"} for {enquiry.customer}
-            </h1>
-            <p className="mt-2 max-w-lg text-[13.5px] opacity-80">
-              {enquiry.business}
-              {enquiry.eventDate ? ` · ${enquiry.eventDate}` : ""}
-              {enquiry.location ? ` · ${enquiry.location}` : ""}
-            </p>
-          </header>
+        {inReview && (
+          <div className="mx-auto mb-4 max-w-3xl rounded-lg border border-border bg-muted/50 px-4 py-3 text-[13px]">
+            This flow holds proposals for internal review before sending. Approve it above when you're happy.
+          </div>
+        )}
 
-          <section className="px-10 py-8">
-            <p className="qf-label">Overview</p>
-            <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-              Thank you for your enquiry. Based on the details you shared, we've put together the package below.
-              Everything here is tailored to your requirements and holds for 14 days.
-            </p>
-
-            {basePackage && (
-              <div className="mt-8">
-                <p className="qf-label">What's included</p>
-                <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
-                  {basePackage.includes.map((i) => (
-                    <li key={i} className="flex items-start gap-2 text-[13.5px]">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand" /> {i}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="mt-8">
-              <p className="qf-label">Your quote</p>
-              <table className="mt-2 w-full text-[13.5px]">
-                <tbody>
-                  {result.lines.map((l) => (
-                    <tr key={l.id} className="border-b border-border last:border-0">
-                      <td className="py-2.5">
-                        <span className="font-medium">{l.label}</span>
-                        {l.detail && <span className="block text-[12.5px] text-muted-foreground">{l.detail}</span>}
-                      </td>
-                      <td className="py-2.5 text-right tabular-nums">{money(l.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="mt-4 space-y-1.5 border-t border-border pt-3 text-[13.5px]">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal</span>
-                  <span className="tabular-nums">{money(result.subtotal)}</span>
-                </div>
-                {result.discount > 0 && (
-                  <div className="flex justify-between text-brand">
-                    <span>Discount</span>
-                    <span className="tabular-nums">-{money(result.discount)}</span>
-                  </div>
-                )}
-                <div className="flex items-baseline justify-between border-t border-border pt-3 text-[20px] font-semibold">
-                  <span>Total</span>
-                  <span className="tabular-nums">{money(result.total)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 rounded-lg bg-muted/60 p-5">
-              <p className="qf-label">Your details</p>
-              <dl className="mt-2 grid gap-x-8 gap-y-1 text-[13px] sm:grid-cols-2">
-                {Object.entries(enquiry.answers).map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-4 border-b border-border/60 py-1 last:border-0">
-                    <dt className="text-muted-foreground">
-                      {flow.components.find((c) => c.variable === k)?.label ?? k}
-                    </dt>
-                    <dd className="font-medium">{Array.isArray(v) ? v.join(", ") : String(v)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-
-            <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-border pt-6">
+        <ProposalDocument
+          template={template}
+          enquiry={enquiry}
+          flow={flow}
+          result={result}
+          basePackage={basePackage}
+          proposal={proposal}
+          actions={
+            <div className="flex flex-wrap items-center gap-3">
               <Button
                 onClick={() => proposal && upsertProposal({ ...proposal, status: "accepted" })}
                 disabled={proposal?.status === "accepted"}
@@ -177,12 +126,8 @@ function ProposalPage() {
               <Button variant="outline">Request a change</Button>
               <p className="text-[12px] text-muted-foreground">Valid for 14 days · 25% deposit secures your date.</p>
             </div>
-          </section>
-
-          <footer className="border-t border-border px-10 py-5 text-[11.5px] text-muted-foreground">
-            Prepared with QuoteFlow · hello@quoteflow.app
-          </footer>
-        </article>
+          }
+        />
       </div>
     </AppShell>
   );
