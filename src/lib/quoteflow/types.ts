@@ -194,7 +194,7 @@ export interface Enquiry {
 export interface Proposal {
   id: string;
   enquiryId: string;
-  status: "draft" | "sent" | "accepted";
+  status: "draft" | "review" | "sent" | "accepted";
   createdAt: string;
   title: string;
 }

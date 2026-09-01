@@ -84,7 +84,7 @@ export function FlowPreview({
           title: `${flow.name} — proposal`,
         });
       }
-      upsertFlow({ ...flow, submissions: flow.submission ? flow.submissions + 1 : flow.submissions });
+      upsertFlow({ ...flow, submissions: flow.submissions + 1 });
     }
     setSubmitted(true);
   };
