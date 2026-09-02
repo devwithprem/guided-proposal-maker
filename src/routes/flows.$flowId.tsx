@@ -2,11 +2,12 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, Logo, StatusPill } from "@/components/quoteflow/AppShell";
 import { RuleList } from "@/components/quoteflow/RuleBuilder";
+import { proposalTemplates } from "@/components/quoteflow/ProposalDocument";
 import { FlowPreview, PriceSummary } from "@/components/quoteflow/FlowPreview";
 import { useActions, useWorkspace } from "@/lib/quoteflow/store";
 import { uid } from "@/lib/quoteflow/seed";
-import { flowVariables, money, runEngine, slugToVariable } from "@/lib/quoteflow/engine";
-import type { CalcOperator, ComponentType, Flow, FlowComponent } from "@/lib/quoteflow/types";
+import { flowVariables, money, operatorLabels, runEngine, slugToVariable } from "@/lib/quoteflow/engine";
+import type { CalcOperator, ComponentType, Flow, FlowComponent, Operator } from "@/lib/quoteflow/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   ArrowLeft,
+  ChevronRight,
   Copy,
   GripVertical,
   Play,
@@ -108,7 +110,7 @@ function FlowBuilder() {
   const { upsertFlow } = useActions();
   const flow = ws.flows.find((f) => f.id === flowId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState("build");
+  const [step, setStep] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   if (!flow) {
@@ -142,6 +144,14 @@ function FlowBuilder() {
     packages: ws.packages,
   });
 
+  const steps = [
+    { label: "Contact details", hint: "Step 1 of the customer form" },
+    { label: "Questions", hint: "Step 2 of the customer form" },
+    { label: "Logic & pricing", hint: "Rules, conditions and calculations" },
+    { label: "Preview", hint: "Customer experience and proposal template" },
+    { label: "Submission", hint: "What happens after submit" },
+  ];
+
   return (
     <AppShell>
       <header className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3">
@@ -158,190 +168,307 @@ function FlowBuilder() {
           <p className="truncate text-[12px] text-muted-foreground">{flow.description}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="h-8">
-              <TabsTrigger value="build" className="text-[12.5px]">
-                Build
-              </TabsTrigger>
-              <TabsTrigger value="logic" className="text-[12.5px]">
-                Logic
-              </TabsTrigger>
-              <TabsTrigger value="pricing" className="text-[12.5px]">
-                Pricing
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
           <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)}>
             <Play className="mr-1 h-3.5 w-3.5" /> Preview
           </Button>
         </div>
       </header>
 
-      <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1">
-        <TabsContent value="build" className="m-0 flex min-h-0 flex-1">
-          <div className="grid w-full grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
-            {/* LEFT: component library */}
-            <div className="hidden border-r border-border bg-sidebar/60 p-3 lg:block">
-              <p className="qf-label mb-2">Components</p>
-              <div className="space-y-4">
-                {library.map((g) => (
-                  <div key={g.group}>
-                    <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{g.group}</p>
-                    <div className="space-y-1">
-                      {g.items.map((i) => (
-                        <button
-                          key={i.type}
-                          draggable
-                          onDragStart={(e) => e.dataTransfer.setData("text/qf-type", i.type)}
-                          onClick={() => addComponent(i.type)}
-                          className={cn(
-                            "flex w-full cursor-grab items-center justify-between rounded-md border border-transparent bg-card px-2 py-1.5 text-left text-[12.5px] shadow-[0_1px_1px_rgba(0,0,0,0.03)] transition-colors hover:border-brand/40",
-                            !i.supported && "opacity-60",
-                          )}
-                        >
-                          {i.label}
-                          {!i.supported && <span className="text-[10px] text-muted-foreground">soon</span>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* CENTER: canvas */}
-            <div
-              className="min-h-[60vh] space-y-2 bg-background p-5"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                const t = e.dataTransfer.getData("text/qf-type") as ComponentType;
-                if (t) addComponent(t);
-              }}
+      {/* Stepper */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-sidebar/50 px-5 py-2.5">
+        {steps.map((s, i) => (
+          <button
+            key={s.label}
+            onClick={() => setStep(i)}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12.5px] transition-colors",
+              i === step ? "bg-card font-medium shadow-[0_1px_2px_rgba(0,0,0,0.05)]" : "text-muted-foreground hover:bg-card/60",
+            )}
+          >
+            <span
+              className={cn(
+                "grid h-5 w-5 place-items-center rounded-full text-[11px] font-semibold",
+                i <= step ? "bg-brand text-brand-foreground" : "bg-muted text-muted-foreground",
+              )}
             >
-              {flow.components.length === 0 && (
-                <div className="grid h-48 place-items-center rounded-lg border border-dashed border-border text-[13px] text-muted-foreground">
-                  Drag a component here to start building.
-                </div>
-              )}
-              {flow.components.map((c) => (
-                <div
-                  key={c.id}
-                  onClick={() => setSelectedId(c.id)}
-                  className={cn(
-                    "qf-card group flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors",
-                    selectedId === c.id && "border-brand/60 ring-1 ring-brand/20",
-                  )}
-                >
-                  <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-[13.5px] font-medium">{c.label}</span>
-                      <span className="rounded bg-secondary px-1.5 py-0.5 text-[10.5px] uppercase tracking-wide text-muted-foreground">
-                        {typeLabel(c.type)}
-                      </span>
-                      {c.required && <span className="text-[10.5px] text-brand">Required</span>}
-                    </div>
-                    <p className="truncate text-[12px] text-muted-foreground">
-                      {c.description || (c.variable ? `Variable: ${c.variable}` : "Output component")}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        save({ components: [...flow.components, { ...structuredClone(c), id: uid("c") }] });
-                      }}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        save({ components: flow.components.filter((x) => x.id !== c.id) });
-                        if (selectedId === c.id) setSelectedId(null);
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+              {i + 1}
+            </span>
+            {s.label}
+            {i < steps.length - 1 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" />}
+          </button>
+        ))}
+        <span className="ml-auto hidden text-[12px] text-muted-foreground lg:block">{steps[step]!.hint}</span>
+      </div>
 
-            {/* RIGHT: properties */}
-            <div className="border-l border-border bg-sidebar/40 p-4">
-              {selected ? (
-                <PropertiesPanel
-                  key={selected.id}
-                  flow={flow}
-                  component={selected}
-                  onChange={updateComponent}
-                  onClose={() => setSelectedId(null)}
+      {/* STEP 1 — contact details */}
+      {step === 0 && (
+        <div className="grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-2">
+            <div>
+              <h2 className="text-[15px] font-semibold">Basic details</h2>
+              <p className="text-[13px] text-muted-foreground">
+                The first page every customer sees. Keep it short — the questions come next.
+              </p>
+            </div>
+            {flow.contactFields.map((c) => (
+              <div key={c.id} className="qf-card flex flex-wrap items-center gap-2 p-3">
+                <Input
+                  className="h-8 max-w-[220px] text-[13px]"
+                  value={c.label}
+                  onChange={(e) =>
+                    save({ contactFields: flow.contactFields.map((x) => (x.id === c.id ? { ...x, label: e.target.value } : x)) })
+                  }
                 />
-              ) : (
-                <div>
-                  <p className="qf-label">Variables</p>
-                  <p className="mt-2 text-[12.5px] text-muted-foreground">
-                    Every question becomes a variable your rules and calculations can use.
-                  </p>
-                  <ul className="mt-3 space-y-1">
-                    {flowVariables(flow).map((v) => (
-                      <li key={v.variable} className="flex items-center justify-between rounded-md bg-card px-2 py-1.5 text-[12.5px]">
-                        <span>{v.label}</span>
-                        <span className="font-mono text-[11px] text-brand">{v.variable}</span>
-                      </li>
+                <span className="font-mono text-[11px] text-brand">{c.variable}</span>
+                <Select
+                  value={c.type}
+                  onValueChange={(v) =>
+                    save({
+                      contactFields: flow.contactFields.map((x) => (x.id === c.id ? { ...x, type: v as ComponentType } : x)),
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-8 w-[120px] text-[12.5px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["text", "email", "phone", "number", "date"].map((t) => (
+                      <SelectItem key={t} value={t} className="capitalize">
+                        {t}
+                      </SelectItem>
                     ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="logic" className="m-0 p-6">
-          <div className="mb-4">
-            <h2 className="text-[15px] font-semibold">Logic</h2>
-            <p className="text-[13px] text-muted-foreground">
-              If this, then that. Rules run top to bottom every time a customer answers.
-            </p>
-          </div>
-          <RuleList flow={flow} onChange={(rules) => save({ rules })} />
-        </TabsContent>
-
-        <TabsContent value="pricing" className="m-0 grid gap-5 p-6 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-4">
-            <div className="qf-card p-4">
-              <p className="qf-label">Base package</p>
-              <Select value={flow.basePackageId ?? "none"} onValueChange={(v) => save({ basePackageId: v === "none" ? undefined : v })}>
-                <SelectTrigger className="mt-2 h-9 max-w-sm text-[13px]">
-                  <SelectValue placeholder="No base package" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No base package</SelectItem>
-                  {ws.packages.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name} — {money(p.price)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {flow.components
-              .filter((c) => c.type === "calculation" && c.calculation)
-              .map((c) => (
-                <CalculationCard key={c.id} flow={flow} component={c} onChange={updateComponent} />
-              ))}
-
-            <Button variant="outline" size="sm" onClick={() => addComponent("calculation")}>
-              <Plus className="mr-1 h-4 w-4" /> Add calculation
+                  </SelectContent>
+                </Select>
+                <label className="ml-auto flex items-center gap-2 text-[12.5px]">
+                  Required
+                  <Switch
+                    checked={!!c.required}
+                    onCheckedChange={(v) =>
+                      save({ contactFields: flow.contactFields.map((x) => (x.id === c.id ? { ...x, required: v } : x)) })
+                    }
+                  />
+                </label>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 hover:text-destructive"
+                  onClick={() => save({ contactFields: flow.contactFields.filter((x) => x.id !== c.id) })}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                save({
+                  contactFields: [
+                    ...flow.contactFields,
+                    { id: uid("cf"), type: "text", label: "New field", variable: slugToVariable(`new_field_${flow.contactFields.length}`), required: false },
+                  ],
+                })
+              }
+            >
+              <Plus className="mr-1 h-4 w-4" /> Add contact field
             </Button>
+          </div>
+          <div className="qf-card h-fit p-4 text-[13px] text-muted-foreground">
+            <p className="qf-label mb-2">Why two steps?</p>
+            Capturing name and email first means you still have a lead even if the customer abandons the detailed
+            questions on step two.
+          </div>
+        </div>
+      )}
+
+      {/* STEP 2 — questions */}
+      {step === 1 && (
+        <div className="grid w-full grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
+          {/* LEFT: component library */}
+          <div className="hidden border-r border-border bg-sidebar/60 p-3 lg:block">
+            <p className="qf-label mb-2">Components</p>
+            <div className="space-y-4">
+              {library.map((g) => (
+                <div key={g.group}>
+                  <p className="mb-1.5 text-[11px] font-semibold text-muted-foreground">{g.group}</p>
+                  <div className="space-y-1">
+                    {g.items.map((i) => (
+                      <button
+                        key={i.type}
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData("text/qf-type", i.type)}
+                        onClick={() => addComponent(i.type)}
+                        className={cn(
+                          "flex w-full cursor-grab items-center justify-between rounded-md border border-transparent bg-card px-2 py-1.5 text-left text-[12.5px] shadow-[0_1px_1px_rgba(0,0,0,0.03)] transition-colors hover:border-brand/40",
+                          !i.supported && "opacity-60",
+                        )}
+                      >
+                        {i.label}
+                        {!i.supported && <span className="text-[10px] text-muted-foreground">soon</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* CENTER: canvas */}
+          <div
+            className="min-h-[60vh] space-y-2 bg-background p-5"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              const t = e.dataTransfer.getData("text/qf-type") as ComponentType;
+              if (t) addComponent(t);
+            }}
+          >
+            {flow.components.length === 0 && (
+              <div className="grid h-48 place-items-center rounded-lg border border-dashed border-border text-[13px] text-muted-foreground">
+                Drag a component here to start building.
+              </div>
+            )}
+            {flow.components.map((c) => (
+              <div
+                key={c.id}
+                onClick={() => setSelectedId(c.id)}
+                className={cn(
+                  "qf-card group flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors",
+                  selectedId === c.id && "border-brand/60 ring-1 ring-brand/20",
+                )}
+              >
+                <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[13.5px] font-medium">{c.label}</span>
+                    <span className="rounded bg-secondary px-1.5 py-0.5 text-[10.5px] uppercase tracking-wide text-muted-foreground">
+                      {typeLabel(c.type)}
+                    </span>
+                    {c.required && <span className="text-[10.5px] text-brand">Required</span>}
+                    {c.showWhen?.variable && (
+                      <span className="rounded bg-brand-soft px-1.5 py-0.5 text-[10.5px] text-brand">Conditional</span>
+                    )}
+                  </div>
+                  <p className="truncate text-[12px] text-muted-foreground">
+                    {c.description || (c.variable ? `Variable: ${c.variable}` : "Output component")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      save({ components: [...flow.components, { ...structuredClone(c), id: uid("c") }] });
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      save({ components: flow.components.filter((x) => x.id !== c.id) });
+                      if (selectedId === c.id) setSelectedId(null);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* RIGHT: properties */}
+          <div className="border-l border-border bg-sidebar/40 p-4">
+            {selected ? (
+              <PropertiesPanel
+                key={selected.id}
+                flow={flow}
+                component={selected}
+                onChange={updateComponent}
+                onClose={() => setSelectedId(null)}
+              />
+            ) : (
+              <div>
+                <p className="qf-label">Variables</p>
+                <p className="mt-2 text-[12.5px] text-muted-foreground">
+                  Every question becomes a variable your rules and calculations can use.
+                </p>
+                <ul className="mt-3 space-y-1">
+                  {flowVariables(flow).map((v) => (
+                    <li key={v.variable} className="flex items-center justify-between rounded-md bg-card px-2 py-1.5 text-[12.5px]">
+                      <span>{v.label}</span>
+                      <span className="font-mono text-[11px] text-brand">{v.variable}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* STEP 3 — logic & pricing */}
+      {step === 2 && (
+        <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <section>
+              <h2 className="text-[15px] font-semibold">Conditional questions</h2>
+              <p className="mb-3 text-[13px] text-muted-foreground">
+                Reveal follow-up questions only when an earlier answer calls for them.
+              </p>
+              <div className="space-y-2">
+                {flow.components
+                  .filter((c) => c.variable && c.type !== "calculation")
+                  .map((c) => (
+                    <ConditionRow key={c.id} flow={flow} component={c} onChange={updateComponent} />
+                  ))}
+              </div>
+            </section>
+
+            <section>
+              <h2 className="text-[15px] font-semibold">Rules</h2>
+              <p className="mb-3 text-[13px] text-muted-foreground">
+                If this, then that. Rules run top to bottom every time a customer answers.
+              </p>
+              <RuleList flow={flow} onChange={(rules) => save({ rules })} />
+            </section>
+
+            <section className="space-y-4">
+              <h2 className="text-[15px] font-semibold">Pricing</h2>
+              <div className="qf-card p-4">
+                <p className="qf-label">Base package</p>
+                <Select
+                  value={flow.basePackageId ?? "none"}
+                  onValueChange={(v) => save({ basePackageId: v === "none" ? undefined : v })}
+                >
+                  <SelectTrigger className="mt-2 h-9 max-w-sm text-[13px]">
+                    <SelectValue placeholder="No base package" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No base package</SelectItem>
+                    {ws.packages.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} — {money(p.price)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {flow.components
+                .filter((c) => c.type === "calculation" && c.calculation)
+                .map((c) => (
+                  <CalculationCard key={c.id} flow={flow} component={c} onChange={updateComponent} />
+                ))}
+
+              <Button variant="outline" size="sm" onClick={() => addComponent("calculation")}>
+                <Plus className="mr-1 h-4 w-4" /> Add calculation
+              </Button>
+            </section>
           </div>
 
           <PriceSummary
@@ -351,8 +478,229 @@ function FlowBuilder() {
             discount={demoResult.discount}
             total={demoResult.total}
           />
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
+
+      {/* STEP 4 — preview customisation */}
+      {step === 3 && (
+        <div className="grid gap-6 p-6 lg:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-[15px] font-semibold">Customer experience</h2>
+              <p className="text-[13px] text-muted-foreground">Control exactly what the customer sees.</p>
+            </div>
+            <div className="qf-card space-y-3 p-4">
+              <Field label="Headline">
+                <Input
+                  className="h-8 bg-card text-[13px]"
+                  value={flow.settings.headline}
+                  onChange={(e) => save({ settings: { ...flow.settings, headline: e.target.value } })}
+                />
+              </Field>
+              <Field label="Sub-headline">
+                <Textarea
+                  className="min-h-[60px] bg-card text-[13px]"
+                  value={flow.settings.subheadline}
+                  onChange={(e) => save({ settings: { ...flow.settings, subheadline: e.target.value } })}
+                />
+              </Field>
+              <Field label="Submit button label">
+                <Input
+                  className="h-8 bg-card text-[13px]"
+                  value={flow.settings.submitLabel}
+                  onChange={(e) => save({ settings: { ...flow.settings, submitLabel: e.target.value } })}
+                />
+              </Field>
+              <Field label="Thank-you message">
+                <Textarea
+                  className="min-h-[60px] bg-card text-[13px]"
+                  value={flow.settings.thankYouMessage}
+                  onChange={(e) => save({ settings: { ...flow.settings, thankYouMessage: e.target.value } })}
+                />
+              </Field>
+            </div>
+
+            <div className="qf-card space-y-2 p-4">
+              <ToggleRow
+                label="Show live price summary"
+                checked={flow.settings.showPriceSummary}
+                onChange={(v) => save({ settings: { ...flow.settings, showPriceSummary: v } })}
+              />
+              <ToggleRow
+                label="Show recommended products"
+                checked={flow.settings.showRecommendations}
+                onChange={(v) => save({ settings: { ...flow.settings, showRecommendations: v } })}
+              />
+              <ToggleRow
+                label="Itemised breakdown"
+                hint="Off shows the total only"
+                checked={flow.settings.breakdown === "itemised"}
+                onChange={(v) => save({ settings: { ...flow.settings, breakdown: v ? "itemised" : "total" } })}
+              />
+            </div>
+
+            <div className="qf-card p-4">
+              <p className="qf-label mb-2">Proposal template</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {proposalTemplates.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => save({ settings: { ...flow.settings, proposalTemplate: t.id } })}
+                    className={cn(
+                      "rounded-lg border border-border p-3 text-left transition-colors hover:border-brand/50",
+                      flow.settings.proposalTemplate === t.id && "border-brand bg-brand-soft/50",
+                    )}
+                  >
+                    <p className="text-[13px] font-medium">{t.name}</p>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">{t.blurb}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-4 py-2">
+              <Logo />
+              <span className="text-[12px] text-muted-foreground">Live customer preview</span>
+            </div>
+            <FlowPreview flow={flow} />
+          </div>
+        </div>
+      )}
+
+      {/* STEP 5 — submission */}
+      {step === 4 && (
+        <div className="grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-[15px] font-semibold">After submission</h2>
+              <p className="text-[13px] text-muted-foreground">
+                Decide what QuoteFlow does the moment a customer hits {flow.settings.submitLabel}.
+              </p>
+            </div>
+
+            <div className="qf-card space-y-3 p-4">
+              <Field label="Generate a proposal">
+                <Select
+                  value={flow.submission.generateProposal}
+                  onValueChange={(v) =>
+                    save({ submission: { ...flow.submission, generateProposal: v as "never" | "on_submit" } })
+                  }
+                >
+                  <SelectTrigger className="h-9 max-w-sm text-[13px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="on_submit">Yes — build it on submit</SelectItem>
+                    <SelectItem value="never">No — just capture the enquiry</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Delivery" hint="Review holds the proposal until someone on your team approves it.">
+                <Select
+                  value={flow.submission.delivery}
+                  onValueChange={(v) =>
+                    save({ submission: { ...flow.submission, delivery: v as "immediate" | "review" } })
+                  }
+                >
+                  <SelectTrigger className="h-9 max-w-sm text-[13px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="immediate">Send to the customer immediately</SelectItem>
+                    <SelectItem value="review">Hold for internal review first</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Notify this address">
+                <Input
+                  className="h-8 max-w-sm bg-card text-[13px]"
+                  value={flow.submission.notifyEmail}
+                  onChange={(e) => save({ submission: { ...flow.submission, notifyEmail: e.target.value } })}
+                />
+              </Field>
+
+              <Field label="Webhook URL" hint="We POST the full quote payload here.">
+                <Input
+                  className="h-8 bg-card font-mono text-[12px]"
+                  placeholder="https://hooks.example.com/quoteflow"
+                  value={flow.submission.webhookUrl}
+                  onChange={(e) => save({ submission: { ...flow.submission, webhookUrl: e.target.value } })}
+                />
+              </Field>
+            </div>
+
+            <div className="qf-card p-4">
+              <p className="qf-label mb-2">Integrations to fire</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "email", label: "Email the customer" },
+                  { id: "crm", label: "Create a HubSpot deal" },
+                  { id: "slack", label: "Post to Slack" },
+                  { id: "sheets", label: "Append to Google Sheets" },
+                  { id: "stripe", label: "Request a Stripe deposit" },
+                ].map((i) => {
+                  const on = flow.submission.integrations.includes(i.id);
+                  return (
+                    <button
+                      key={i.id}
+                      onClick={() =>
+                        save({
+                          submission: {
+                            ...flow.submission,
+                            integrations: on
+                              ? flow.submission.integrations.filter((x) => x !== i.id)
+                              : [...flow.submission.integrations, i.id],
+                          },
+                        })
+                      }
+                      className={cn(
+                        "rounded-full border border-border px-3 py-1.5 text-[12.5px] transition-colors",
+                        on ? "border-brand bg-brand-soft text-brand" : "text-muted-foreground hover:border-brand/40",
+                      )}
+                    >
+                      {i.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <Link to="/connections" className="mt-3 inline-block text-[12.5px] text-brand hover:underline">
+                Manage connections
+              </Link>
+            </div>
+          </div>
+
+          <div className="qf-card h-fit p-4">
+            <p className="qf-label mb-2">Embed this flow</p>
+            <p className="text-[12.5px] text-muted-foreground">
+              Drop the form on any website. Submissions land in Enquiries.
+            </p>
+            <Input readOnly className="mt-3 font-mono text-[11px]" value={`<div data-quoteflow-flow="${flow.id}"></div>`} />
+            <Input
+              readOnly
+              className="mt-2 font-mono text-[11px]"
+              value={`<script src="${origin()}/quoteflow.js" async></script>`}
+            />
+            <Button asChild variant="outline" size="sm" className="mt-3">
+              <Link to="/embed/$flowId" params={{ flowId: flow.id }} target="_blank">
+                Open hosted form
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between border-t border-border px-6 py-3">
+        <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
+          Back
+        </Button>
+        <Button size="sm" disabled={step === 4} onClick={() => setStep((s) => s + 1)}>
+          Next: {steps[Math.min(step + 1, 4)]!.label}
+        </Button>
+      </div>
 
       <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
         <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:max-w-3xl">
@@ -366,6 +714,118 @@ function FlowBuilder() {
     </AppShell>
   );
 }
+
+function origin() {
+  return typeof window === "undefined" ? "https://your-site.com" : window.location.origin;
+}
+
+function ToggleRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md bg-card px-2.5 py-2">
+      <span className="text-[13px]">
+        {label}
+        {hint && <span className="block text-[11.5px] text-muted-foreground">{hint}</span>}
+      </span>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+function ConditionRow({
+  flow,
+  component,
+  onChange,
+}: {
+  flow: Flow;
+  component: FlowComponent;
+  onChange: (c: FlowComponent) => void;
+}) {
+  const others = flowVariables(flow).filter((v) => v.variable !== component.variable);
+  const cond = component.showWhen;
+  const source = others.find((o) => o.variable === cond?.variable);
+
+  return (
+    <div className="qf-card flex flex-wrap items-center gap-2 p-3 text-[12.5px]">
+      <span className="min-w-[150px] font-medium">{component.label}</span>
+      <span className="text-muted-foreground">show when</span>
+      <Select
+        value={cond?.variable ?? "always"}
+        onValueChange={(v) =>
+          onChange({
+            ...component,
+            showWhen:
+              v === "always"
+                ? undefined
+                : { id: cond?.id ?? uid("cond"), variable: v, operator: cond?.operator ?? "equals", value: cond?.value ?? "" },
+          })
+        }
+      >
+        <SelectTrigger className="h-8 w-[170px] text-[12.5px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="always">Always visible</SelectItem>
+          {others.map((o) => (
+            <SelectItem key={o.variable} value={o.variable}>
+              {o.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {cond && (
+        <>
+          <Select
+            value={cond.operator}
+            onValueChange={(v) => onChange({ ...component, showWhen: { ...cond, operator: v as Operator } })}
+          >
+            <SelectTrigger className="h-8 w-[170px] text-[12.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(operatorLabels) as Operator[]).map((op) => (
+                <SelectItem key={op} value={op}>
+                  {operatorLabels[op]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {source?.options?.length ? (
+            <Select value={cond.value} onValueChange={(v) => onChange({ ...component, showWhen: { ...cond, value: v } })}>
+              <SelectTrigger className="h-8 w-[160px] text-[12.5px]">
+                <SelectValue placeholder="Choose value" />
+              </SelectTrigger>
+              <SelectContent>
+                {source.options.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              className="h-8 w-[160px] text-[12.5px]"
+              value={cond.value}
+              onChange={(e) => onChange({ ...component, showWhen: { ...cond, value: e.target.value } })}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 
 function PropertiesPanel({
   flow,

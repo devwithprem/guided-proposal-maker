@@ -86,6 +86,9 @@ export function FlowPreview({
       }
       upsertFlow({ ...flow, submissions: flow.submissions + 1 });
     }
+    if (typeof window !== "undefined" && window.parent !== window) {
+      window.parent.postMessage({ type: "quoteflow:submit", flowId: flow.id, payload: { answers, total: result.total } }, "*");
+    }
     setSubmitted(true);
   };
 
