@@ -2,11 +2,12 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, Logo, StatusPill } from "@/components/quoteflow/AppShell";
 import { RuleList } from "@/components/quoteflow/RuleBuilder";
+import { proposalTemplates } from "@/components/quoteflow/ProposalDocument";
 import { FlowPreview, PriceSummary } from "@/components/quoteflow/FlowPreview";
 import { useActions, useWorkspace } from "@/lib/quoteflow/store";
 import { uid } from "@/lib/quoteflow/seed";
-import { flowVariables, money, runEngine, slugToVariable } from "@/lib/quoteflow/engine";
-import type { CalcOperator, ComponentType, Flow, FlowComponent } from "@/lib/quoteflow/types";
+import { flowVariables, money, operatorLabels, runEngine, slugToVariable } from "@/lib/quoteflow/engine";
+import type { CalcOperator, ComponentType, Flow, FlowComponent, Operator } from "@/lib/quoteflow/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   ArrowLeft,
+  ChevronRight,
   Copy,
   GripVertical,
   Play,
