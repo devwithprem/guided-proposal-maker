@@ -153,7 +153,7 @@ export function StatusPill({ status }: { status: string }) {
     new: "bg-secondary text-foreground",
     paused: "bg-muted text-muted-foreground",
     sent: "bg-secondary text-foreground",
-    review: "bg-amber-100 text-amber-800",
+    review: "bg-muted text-foreground",
     quoted: "bg-secondary text-foreground",
     lost: "bg-muted text-muted-foreground",
   };
