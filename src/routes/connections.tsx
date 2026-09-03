@@ -38,9 +38,30 @@ const catalog: Conn[] = [
 ];
 
 function ConnectionsPage() {
+  const ws = useWorkspace();
   const [connected, setConnected] = useState<string[]>(["sheets", "email"]);
+  const [flowId, setFlowId] = useState(ws.flows[0]?.id ?? "");
   const toggle = (id: string) =>
     setConnected((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+
+  const origin = typeof window === "undefined" ? "https://your-site.com" : window.location.origin;
+  const snippets = [
+    {
+      label: "SDK (recommended)",
+      hint: "Auto-sizes the form and fires an onSubmit callback.",
+      code: `<div data-quoteflow-flow="${flowId}"></div>\n<script src="${origin}/quoteflow.js" async></script>`,
+    },
+    {
+      label: "iFrame",
+      hint: "Works anywhere, including page builders.",
+      code: `<iframe src="${origin}/embed/${flowId}" style="width:100%;border:0;height:760px" title="Request a quote"></iframe>`,
+    },
+    {
+      label: "Share link",
+      hint: "Send it in an email or put it behind a button.",
+      code: `${origin}/embed/${flowId}`,
+    },
+  ];
 
   return (
     <AppShell>
@@ -49,17 +70,48 @@ function ConnectionsPage() {
         description="Send enquiries, quotes and proposals wherever your team already works."
       />
       <div className="p-6">
-        <div className="qf-card mb-4 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-[13.5px] font-semibold">Embed a flow on your website</p>
-            <p className="text-[12.5px] text-muted-foreground">Drop this snippet anywhere to start collecting enquiries.</p>
+        <div className="qf-card mb-5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[13.5px] font-semibold">Embed a flow anywhere</p>
+              <p className="text-[12.5px] text-muted-foreground">
+                Every submission lands in Enquiries and follows that flow's submission settings.
+              </p>
+            </div>
+            <Select value={flowId} onValueChange={setFlowId}>
+              <SelectTrigger className="h-9 w-[240px] text-[13px]">
+                <SelectValue placeholder="Choose a flow" />
+              </SelectTrigger>
+              <SelectContent>
+                {ws.flows.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Input
-            readOnly
-            value='<script src="https://cdn.quoteflow.app/embed.js" data-flow="event-rental"></script>'
-            className="font-mono text-[11.5px] sm:w-[440px]"
-          />
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {snippets.map((s) => (
+              <div key={s.label} className="rounded-lg border border-border bg-muted/30 p-3">
+                <p className="text-[12.5px] font-medium">{s.label}</p>
+                <p className="mb-2 text-[11.5px] text-muted-foreground">{s.hint}</p>
+                <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-card p-2.5 font-mono text-[11px] leading-relaxed">
+                  {s.code}
+                </pre>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 h-7 text-[12px]"
+                  onClick={() => navigator.clipboard?.writeText(s.code)}
+                >
+                  Copy
+                </Button>
+              </div>
+            ))}
+          </div>
         </div>
+
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {catalog.map((c) => {
