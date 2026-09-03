@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   ArrowLeft,
@@ -148,7 +147,7 @@ function FlowBuilder() {
     { label: "Contact details", hint: "Step 1 of the customer form" },
     { label: "Questions", hint: "Step 2 of the customer form" },
     { label: "Logic & pricing", hint: "Rules, conditions and calculations" },
-    { label: "Preview", hint: "Customer experience and proposal template" },
+    { label: "Preview & template", hint: "Customer experience and proposal template" },
     { label: "Submission", hint: "What happens after submit" },
   ];
 
@@ -697,9 +696,16 @@ function FlowBuilder() {
         <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
           Back
         </Button>
-        <Button size="sm" disabled={step === 4} onClick={() => setStep((s) => s + 1)}>
-          Next: {steps[Math.min(step + 1, 4)]!.label}
-        </Button>
+        {step === 4 ? (
+          <Button size="sm" onClick={() => setPreviewOpen(true)}>
+            Preview the customer form
+          </Button>
+        ) : (
+          <Button size="sm" onClick={() => setStep((s) => s + 1)}>
+            Next: {steps[step + 1]!.label}
+          </Button>
+        )}
+
       </div>
 
       <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
