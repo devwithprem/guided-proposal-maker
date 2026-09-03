@@ -147,7 +147,7 @@ function FlowBuilder() {
     { label: "Contact details", hint: "Step 1 of the customer form" },
     { label: "Questions", hint: "Step 2 of the customer form" },
     { label: "Logic & pricing", hint: "Rules, conditions and calculations" },
-    { label: "Preview", hint: "Customer experience and proposal template" },
+    { label: "Preview & template", hint: "Customer experience and proposal template" },
     { label: "Submission", hint: "What happens after submit" },
   ];
 
