@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, PageHeader } from "@/components/quoteflow/AppShell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useWorkspace } from "@/lib/quoteflow/store";
 import { Calendar, CreditCard, Database, Mail, MessageSquare, Table2, Webhook, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
