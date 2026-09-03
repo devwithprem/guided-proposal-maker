@@ -696,9 +696,16 @@ function FlowBuilder() {
         <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>
           Back
         </Button>
-        <Button size="sm" disabled={step === 4} onClick={() => setStep((s) => s + 1)}>
-          Next: {steps[Math.min(step + 1, 4)]!.label}
-        </Button>
+        {step === 4 ? (
+          <Button size="sm" onClick={() => setPreviewOpen(true)}>
+            Preview the customer form
+          </Button>
+        ) : (
+          <Button size="sm" onClick={() => setStep((s) => s + 1)}>
+            Next: {steps[step + 1]!.label}
+          </Button>
+        )}
+
       </div>
 
       <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
