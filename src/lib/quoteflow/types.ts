@@ -34,17 +34,20 @@ export interface FlowComponent {
   label: string;
   description?: string | undefined;
   variable?: string | undefined;
+  /** True when the user has explicitly customized the variable name or after initial creation */
+  variableLocked?: boolean | undefined;
   required?: boolean | undefined;
   min?: number | undefined;
   max?: number | undefined;
   unit?: string | undefined;
   options?: Option[] | undefined;
+  /** Default/initial value for standalone variables or prefilled questions */
+  defaultValue?: string | number | undefined;
   /** for calculation components */
   calculation?: Calculation | undefined;
   /** only show this question when the condition passes */
   showWhen?: Condition | undefined;
 }
-
 
 export type Operator =
   | "equals"
@@ -112,6 +115,8 @@ export interface Calculation {
   name: string;
   resultVariable: string;
   terms: CalcTerm[];
+  /** When true, adds the calculated amount as a line item to the quote */
+  includeInQuote?: boolean | undefined;
 }
 
 export type ProposalTemplateId = "ink" | "minimal" | "editorial" | "compact";
@@ -152,7 +157,6 @@ export interface Flow {
   submission: SubmissionSettings;
 }
 
-
 export interface Product {
   id: string;
   name: string;
@@ -174,6 +178,67 @@ export interface Package {
   archived: boolean;
 }
 
+/**
+ * Canonical origin of a priced or discounted line item.
+ * Legacy literals ("package" | "recommended" | "addon" | "fee" | "discount") are retained in the union
+ * during transition so existing components compile without breakage.
+ */
+export type QuoteLineSource =
+  | "base_package"
+  | "customer_selection"
+  | "business_manual"
+  | "rule_action"
+  | "calculation"
+  | "package"
+  | "recommended"
+  | "addon"
+  | "fee"
+  | "discount";
+
+export interface QuoteLine {
+  id: string;
+  label: string;
+  detail?: string;
+  amount: number;
+  quantity?: number;
+  unitPrice?: number;
+  source: QuoteLineSource;
+  /** Present when source is "rule_action" (or legacy "fee"/"recommended") */
+  sourceRuleId?: string;
+  /** Reference to catalog product, package, addon, or calculation ID */
+  targetId?: string;
+}
+
+export interface ManualQuoteAdjustment {
+  id: string;
+  label: string;
+  amount: number;
+  quantity: number;
+  kind: "charge" | "discount";
+}
+
+export interface EnquiryQuoteConfig {
+  basePackageId?: string | undefined;
+  selectedAddonIds: string[];
+  selectedProductIds: string[];
+  productQuantities: Record<string, number>;
+  manualAdjustments: ManualQuoteAdjustment[];
+}
+
+export interface QuoteSnapshot {
+  capturedAt: string;
+  flowId: string;
+  basePackageId?: string | undefined;
+  lines: QuoteLine[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  score: number;
+  matchedRuleIds: string[];
+  recommendedProductIds: string[];
+  calculations: { name: string; variable: string; value: number }[];
+}
+
 export type EnquiryStatus = "new" | "qualified" | "quoted" | "won" | "lost";
 
 export interface Enquiry {
@@ -188,21 +253,69 @@ export interface Enquiry {
   location?: string | undefined;
   answers: Record<string, string | number | string[]>;
   selectedAddons: string[];
+  /** Customer-selected recommended product IDs */
+  selectedProducts?: string[] | undefined;
+  /** Editable working quote configuration for the business owner */
+  quoteConfig?: EnquiryQuoteConfig | undefined;
+  /** Latest calculated quote snapshot for this enquiry */
+  quoteSnapshot?: QuoteSnapshot | undefined;
   notes: string;
+}
+
+export type ProposalStatus = "draft" | "review" | "sent" | "accepted" | "declined";
+
+export interface ProposalSnapshot {
+  revision: number;
+  capturedAt: string;
+  customer: string;
+  email: string;
+  business: string;
+  eventDate?: string | undefined;
+  location?: string | undefined;
+  template: ProposalTemplateId;
+  basePackage?: {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    includes: string[];
+  } | undefined;
+  answers: { variable: string; label: string; value: string }[];
+  quote: QuoteSnapshot;
+  terms: string;
+  validityDays: number;
+  depositPercent: number;
 }
 
 export interface Proposal {
   id: string;
   enquiryId: string;
-  status: "draft" | "review" | "sent" | "accepted";
+  status: ProposalStatus;
   createdAt: string;
   title: string;
+  /** Immutable snapshot preserved when a proposal is generated or sent */
+  snapshot?: ProposalSnapshot | undefined;
+  /** Revision number, incremented when creating a new revision of a sent proposal */
+  revision?: number | undefined;
+}
+
+export interface WorkspaceSettings {
+  businessName: string;
+  replyToEmail: string;
+  currency: "USD" | "GBP" | "EUR" | "AUD" | "CAD";
+  depositPercent: number;
+  validityDays: number;
+  terms: string;
+  autoQuote: boolean;
+  notifyOnSubmit: boolean;
 }
 
 export interface WorkspaceData {
+  schemaVersion?: number | undefined;
   flows: Flow[];
   products: Product[];
   packages: Package[];
   enquiries: Enquiry[];
   proposals: Proposal[];
+  settings?: WorkspaceSettings | undefined;
 }

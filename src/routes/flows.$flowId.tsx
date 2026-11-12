@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, Logo, StatusPill } from "@/components/quoteflow/AppShell";
 import { RuleList } from "@/components/quoteflow/RuleBuilder";
@@ -6,7 +6,17 @@ import { proposalTemplates } from "@/components/quoteflow/ProposalDocument";
 import { FlowPreview, PriceSummary } from "@/components/quoteflow/FlowPreview";
 import { useActions, useWorkspace } from "@/lib/quoteflow/store";
 import { uid } from "@/lib/quoteflow/seed";
-import { flowVariables, money, operatorLabels, runEngine, slugToVariable } from "@/lib/quoteflow/engine";
+import {
+  createUniqueVariable,
+  flowVariables,
+  money,
+  operatorLabels,
+  renameCalculationResultVariable,
+  renameFlowOptionValue,
+  renameFlowVariable,
+  runEngine,
+  slugToVariable,
+} from "@/lib/quoteflow/engine";
 import type { CalcOperator, ComponentType, Flow, FlowComponent, Operator } from "@/lib/quoteflow/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,22 +88,30 @@ const library: { group: string; items: { type: ComponentType; label: string; sup
 const typeLabel = (t: ComponentType) =>
   library.flatMap((g) => g.items).find((i) => i.type === t)?.label ?? t;
 
-function makeComponent(type: ComponentType): FlowComponent {
+function makeComponent(type: ComponentType, flow: Flow): FlowComponent {
   const base: FlowComponent = { id: uid("c"), type, label: typeLabel(type) };
   if (["price-summary", "proposal", "crm-action", "recommendation"].includes(type)) return base;
   if (type === "calculation") {
+    const resultVariable = createUniqueVariable("new_calculation", flow);
     return {
       ...base,
       label: "New Calculation",
       calculation: {
         id: uid("calc"),
         name: "New Calculation",
-        resultVariable: "new_calculation",
+        resultVariable,
         terms: [{ id: uid("t"), kind: "variable", variable: "" }],
       },
     };
   }
-  const comp: FlowComponent = { ...base, label: `New ${typeLabel(type)}`, variable: slugToVariable(`new_${typeLabel(type)}`), required: false };
+  const variable = createUniqueVariable(`new_${typeLabel(type)}`, flow);
+  const comp: FlowComponent = {
+    ...base,
+    label: `New ${typeLabel(type)}`,
+    variable,
+    variableLocked: true,
+    required: false,
+  };
   if (type === "dropdown" || type === "multiselect") {
     comp.options = [
       { id: uid("o"), label: "Option one", value: "option_one" },
@@ -126,7 +144,7 @@ function FlowBuilder() {
   const selected = flow.components.find((c) => c.id === selectedId) ?? null;
 
   const addComponent = (type: ComponentType, index?: number) => {
-    const comp = makeComponent(type);
+    const comp = makeComponent(type, flow);
     const next = [...flow.components];
     next.splice(index ?? next.length, 0, comp);
     save({ components: next });
@@ -264,7 +282,14 @@ function FlowBuilder() {
                 save({
                   contactFields: [
                     ...flow.contactFields,
-                    { id: uid("cf"), type: "text", label: "New field", variable: slugToVariable(`new_field_${flow.contactFields.length}`), required: false },
+                    {
+                      id: uid("cf"),
+                      type: "text",
+                      label: "New field",
+                      variable: createUniqueVariable(`new_field_${flow.contactFields.length}`, flow),
+                      variableLocked: true,
+                      required: false,
+                    },
                   ],
                 })
               }
@@ -358,7 +383,20 @@ function FlowBuilder() {
                     className="h-7 w-7"
                     onClick={(e) => {
                       e.stopPropagation();
-                      save({ components: [...flow.components, { ...structuredClone(c), id: uid("c") }] });
+                      const copy = structuredClone(c);
+                      copy.id = uid("c");
+                      if (copy.variable) {
+                        copy.variable = createUniqueVariable(`${copy.variable}_copy`, flow);
+                        copy.variableLocked = true;
+                      }
+                      if (copy.type === "calculation" && copy.calculation) {
+                        copy.calculation.id = uid("calc");
+                        copy.calculation.resultVariable = createUniqueVariable(
+                          `${copy.calculation.resultVariable}_copy`,
+                          flow,
+                        );
+                      }
+                      save({ components: [...flow.components, copy] });
                     }}
                   >
                     <Copy className="h-3.5 w-3.5" />
@@ -388,6 +426,7 @@ function FlowBuilder() {
                 flow={flow}
                 component={selected}
                 onChange={updateComponent}
+                onSaveFlow={save}
                 onClose={() => setSelectedId(null)}
               />
             ) : (
@@ -457,13 +496,17 @@ function FlowBuilder() {
                   </SelectContent>
                 </Select>
               </div>
-
               {flow.components
                 .filter((c) => c.type === "calculation" && c.calculation)
                 .map((c) => (
-                  <CalculationCard key={c.id} flow={flow} component={c} onChange={updateComponent} />
+                  <CalculationCard
+                    key={c.id}
+                    flow={flow}
+                    component={c}
+                    onChange={updateComponent}
+                    onSaveFlow={save}
+                  />
                 ))}
-
               <Button variant="outline" size="sm" onClick={() => addComponent("calculation")}>
                 <Plus className="mr-1 h-4 w-4" /> Add calculation
               </Button>
@@ -578,7 +621,6 @@ function FlowBuilder() {
                 Decide what QuoteFlow does the moment a customer hits {flow.settings.submitLabel}.
               </p>
             </div>
-
             <div className="qf-card space-y-3 p-4">
               <Field label="Generate a proposal">
                 <Select
@@ -596,7 +638,6 @@ function FlowBuilder() {
                   </SelectContent>
                 </Select>
               </Field>
-
               <Field label="Delivery" hint="Review holds the proposal until someone on your team approves it.">
                 <Select
                   value={flow.submission.delivery}
@@ -613,7 +654,6 @@ function FlowBuilder() {
                   </SelectContent>
                 </Select>
               </Field>
-
               <Field label="Notify this address">
                 <Input
                   className="h-8 max-w-sm bg-card text-[13px]"
@@ -621,7 +661,6 @@ function FlowBuilder() {
                   onChange={(e) => save({ submission: { ...flow.submission, notifyEmail: e.target.value } })}
                 />
               </Field>
-
               <Field label="Webhook URL" hint="We POST the full quote payload here.">
                 <Input
                   className="h-8 bg-card font-mono text-[12px]"
@@ -705,7 +744,6 @@ function FlowBuilder() {
             Next: {steps[step + 1]!.label}
           </Button>
         )}
-
       </div>
 
       <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -759,7 +797,6 @@ function ConditionRow({
   const others = flowVariables(flow).filter((v) => v.variable !== component.variable);
   const cond = component.showWhen;
   const source = others.find((o) => o.variable === cond?.variable);
-
   return (
     <div className="qf-card flex flex-wrap items-center gap-2 p-3 text-[12.5px]">
       <span className="min-w-[150px] font-medium">{component.label}</span>
@@ -788,7 +825,6 @@ function ConditionRow({
           ))}
         </SelectContent>
       </Select>
-
       {cond && (
         <>
           <Select
@@ -832,21 +868,21 @@ function ConditionRow({
   );
 }
 
-
 function PropertiesPanel({
   flow,
   component,
   onChange,
+  onSaveFlow,
   onClose,
 }: {
   flow: Flow;
   component: FlowComponent;
   onChange: (c: FlowComponent) => void;
+  onSaveFlow: (patch: Partial<Flow>) => void;
   onClose: () => void;
 }) {
   const set = (patch: Partial<FlowComponent>) => onChange({ ...component, ...patch });
   const hasOptions = component.type === "dropdown" || component.type === "multiselect" || component.type === "radio";
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -855,20 +891,24 @@ function PropertiesPanel({
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
-
       <Field label="Label">
         <Input
           className="h-8 bg-card text-[13px]"
           value={component.label}
-          onChange={(e) =>
+          onChange={(e) => {
+            const nextLabel = e.target.value;
+            // Preserve existing variable identity if already set/locked so rules and calculations never silently break
+            const shouldAutoSlug =
+              component.variable !== undefined &&
+              !component.variableLocked &&
+              component.variable.trim() === "";
             set({
-              label: e.target.value,
-              variable: component.variable ? slugToVariable(e.target.value) : component.variable,
-            })
-          }
+              label: nextLabel,
+              ...(shouldAutoSlug ? { variable: createUniqueVariable(nextLabel, flow, component.id), variableLocked: true } : {}),
+            });
+          }}
         />
       </Field>
-
       <Field label="Description">
         <Textarea
           className="min-h-[60px] bg-card text-[13px]"
@@ -876,24 +916,36 @@ function PropertiesPanel({
           onChange={(e) => set({ description: e.target.value })}
         />
       </Field>
-
       {component.variable !== undefined && (
-        <Field label="Variable name" hint="Used by rules and calculations">
+        <Field label="Variable name" hint="Stable key used by rules and calculations">
           <Input
             className="h-8 bg-card font-mono text-[12.5px] text-brand"
             value={component.variable}
-            onChange={(e) => set({ variable: slugToVariable(e.target.value) })}
+            onChange={(e) => {
+              const nextVar = slugToVariable(e.target.value);
+              const renameRes = renameFlowVariable(
+                flow,
+                component.variable ?? "",
+                nextVar,
+                component.id,
+              );
+              if (renameRes.success) {
+                onSaveFlow({
+                  components: renameRes.flow.components,
+                  contactFields: renameRes.flow.contactFields,
+                  rules: renameRes.flow.rules,
+                });
+              }
+            }}
           />
         </Field>
       )}
-
-      {component.variable !== undefined && (
+      {component.variable !== undefined && component.type !== "variable" && (
         <div className="flex items-center justify-between rounded-md bg-card px-2.5 py-2">
           <span className="text-[13px]">Required</span>
           <Switch checked={!!component.required} onCheckedChange={(v) => set({ required: v })} />
         </div>
       )}
-
       {component.type === "number" && (
         <div className="grid grid-cols-2 gap-2">
           <Field label="Minimum">
@@ -924,7 +976,6 @@ function PropertiesPanel({
           </div>
         </div>
       )}
-
       {hasOptions && (
         <div>
           <p className="qf-label mb-1.5">Options</p>
@@ -937,7 +988,8 @@ function PropertiesPanel({
                   onChange={(e) =>
                     set({
                       options: (component.options ?? []).map((x) =>
-                        x.id === o.id ? { ...x, label: e.target.value, value: slugToVariable(e.target.value) } : x,
+                        // Keep existing option value stable when editing display label
+                        x.id === o.id ? { ...x, label: e.target.value } : x,
                       ),
                     })
                   }
@@ -945,11 +997,14 @@ function PropertiesPanel({
                 <Input
                   className="h-8 w-[110px] bg-card font-mono text-[11.5px] text-muted-foreground"
                   value={o.value}
-                  onChange={(e) =>
-                    set({
-                      options: (component.options ?? []).map((x) => (x.id === o.id ? { ...x, value: e.target.value } : x)),
-                    })
-                  }
+                  onChange={(e) => {
+                    const nextFlow = renameFlowOptionValue(flow, component.id, o.id, e.target.value);
+                    onSaveFlow({
+                      components: nextFlow.components,
+                      contactFields: nextFlow.contactFields,
+                      rules: nextFlow.rules,
+                    });
+                  }}
                 />
                 <Button
                   variant="ghost"
@@ -966,17 +1021,28 @@ function PropertiesPanel({
             variant="ghost"
             size="sm"
             className="mt-1 h-7 text-[12px] text-brand hover:text-brand"
-            onClick={() =>
-              set({ options: [...(component.options ?? []), { id: uid("o"), label: "New option", value: "new_option" }] })
-            }
+            onClick={() => {
+              const idx = (component.options ?? []).length + 1;
+              set({
+                options: [
+                  ...(component.options ?? []),
+                  { id: uid("o"), label: `Option ${idx}`, value: `option_${idx}` },
+                ],
+              });
+            }}
           >
             <Plus className="mr-1 h-3.5 w-3.5" /> Add option
           </Button>
         </div>
       )}
-
       {component.type === "calculation" && component.calculation && (
-        <CalculationCard flow={flow} component={component} onChange={onChange} compact />
+        <CalculationCard
+          flow={flow}
+          component={component}
+          onChange={onChange}
+          onSaveFlow={onSaveFlow}
+          compact
+        />
       )}
     </div>
   );
@@ -996,31 +1062,49 @@ function CalculationCard({
   flow,
   component,
   onChange,
+  onSaveFlow,
   compact,
 }: {
   flow: Flow;
   component: FlowComponent;
   onChange: (c: FlowComponent) => void;
+  onSaveFlow?: (patch: Partial<Flow>) => void;
   compact?: boolean;
 }) {
   const calc = component.calculation!;
   const vars = flowVariables(flow).filter((v) => v.variable !== calc.resultVariable);
   const ops: CalcOperator[] = ["+", "-", "×", "÷"];
-
   const setCalc = (patch: Partial<typeof calc>) =>
     onChange({ ...component, calculation: { ...calc, ...patch }, label: patch.name ?? component.label });
-
   return (
     <div className={cn("qf-card p-4", compact && "bg-card")}>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Input
           className="h-8 max-w-[220px] text-[13px]"
           value={calc.name}
-          onChange={(e) => setCalc({ name: e.target.value, resultVariable: slugToVariable(e.target.value) })}
+          onChange={(e) => setCalc({ name: e.target.value })}
         />
-        <span className="font-mono text-[11px] text-brand">{calc.resultVariable}</span>
+        <Input
+          className="h-8 max-w-[160px] font-mono text-[11.5px] text-brand"
+          value={calc.resultVariable}
+          onChange={(e) => {
+            const nextVar = slugToVariable(e.target.value);
+            if (onSaveFlow) {
+              const renameRes = renameCalculationResultVariable(flow, component.id, nextVar);
+              if (renameRes.success) {
+                onSaveFlow({
+                  components: renameRes.flow.components,
+                  contactFields: renameRes.flow.contactFields,
+                  rules: renameRes.flow.rules,
+                });
+                return;
+              }
+            }
+            setCalc({ resultVariable: nextVar });
+          }}
+          title="Calculation variable name"
+        />
       </div>
-
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {calc.terms.map((t, i) => (
           <div key={t.id} className="flex items-center gap-2">
@@ -1091,7 +1175,6 @@ function CalculationCard({
         <span className="text-[14px] text-muted-foreground">=</span>
         <span className="rounded-md bg-brand-soft px-2.5 py-1 text-[13px] font-medium text-brand">{calc.name}</span>
       </div>
-
       <Button
         variant="ghost"
         size="sm"
