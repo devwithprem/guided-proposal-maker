@@ -84,12 +84,14 @@ function subscribe(cb: () => void) {
   return () => listeners.delete(cb);
 }
 
-const getSnapshot = () => {
+export const getSnapshot = () => {
   hydrate();
   return state;
 };
 
-const getServerSnapshot = () => state;
+export const getWorkspaceState = getSnapshot;
+
+export const getServerSnapshot = () => state;
 
 export function setState(updater: (s: WorkspaceData) => WorkspaceData) {
   hydrate();
@@ -149,8 +151,53 @@ export function restoreWorkspaceResetBackup(): boolean {
   }
 }
 
+export function recordSubmission(opts: {
+  enquiry: Enquiry;
+  proposal?: Proposal | undefined;
+  flowId: string;
+}): boolean {
+  hydrate();
+  const prevFlow = state.flows.find((f) => f.id === opts.flowId);
+  const updatedFlows = prevFlow
+    ? state.flows.map((f) =>
+        f.id === opts.flowId
+          ? { ...f, submissions: f.submissions + 1, updatedAt: new Date().toISOString().slice(0, 10) }
+          : f,
+      )
+    : state.flows;
+
+  const nextEnquiries = [opts.enquiry, ...state.enquiries.filter((e) => e.id !== opts.enquiry.id)];
+  const nextProposals = opts.proposal
+    ? [opts.proposal, ...state.proposals.filter((p) => p.id !== opts.proposal!.id)]
+    : state.proposals;
+
+  const nextState: WorkspaceData = {
+    ...state,
+    flows: updatedFlows,
+    enquiries: nextEnquiries,
+    proposals: nextProposals,
+  };
+
+  // If in browser, verify storage write BEFORE committing in-memory state
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(nextState));
+    } catch (err) {
+      console.error("[QuoteFlow Storage] Failed to persist submission to localStorage:", err);
+      throw err;
+    }
+  }
+
+  state = nextState;
+  emit();
+  return true;
+}
+
 export function useActions() {
   return {
+    recordSubmission: useCallback((opts: { enquiry: Enquiry; proposal?: Proposal | undefined; flowId: string }) => {
+      return recordSubmission(opts);
+    }, []),
     upsertFlow: useCallback((flow: Flow) => {
       setState((s) => {
         const next = { ...flow, updatedAt: new Date().toISOString().slice(0, 10) };

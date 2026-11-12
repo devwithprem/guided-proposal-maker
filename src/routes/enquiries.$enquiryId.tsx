@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell, PageHeader, StatusPill } from "@/components/quoteflow/AppShell";
 import { useActions, useWorkspace } from "@/lib/quoteflow/store";
-import { money, runEngine } from "@/lib/quoteflow/engine";
+import { createProposalSnapshot, evaluateEnquiryQuote, money } from "@/lib/quoteflow/engine";
 import { PriceSummary } from "@/components/quoteflow/FlowPreview";
 import { uid } from "@/lib/quoteflow/seed";
 import type { EnquiryStatus } from "@/lib/quoteflow/types";
@@ -45,18 +45,11 @@ function EnquiryDetail() {
   }
 
   const flow = ws.flows.find((f) => f.id === enquiry.flowId);
-  const result = flow
-    ? runEngine({
-        flow,
-        answers: enquiry.answers,
-        products: ws.products,
-        packages: ws.packages,
-        selectedAddons: enquiry.selectedAddons,
-      })
-    : null;
+  const result = evaluateEnquiryQuote(enquiry, ws);
 
   const labelFor = (variable: string) =>
-    flow?.components.find((c) => c.variable === variable)?.label ?? variable;
+    [...(flow?.contactFields ?? []), ...(flow?.components ?? [])].find((c) => c.variable === variable)?.label ??
+    variable;
 
   return (
     <AppShell>
@@ -84,13 +77,22 @@ function EnquiryDetail() {
               size="sm"
               onClick={() => {
                 const existing = ws.proposals.find((p) => p.enquiryId === enquiry.id);
-                if (!existing) {
+                if (!existing && flow && result) {
+                  const snapshot = createProposalSnapshot({
+                    enquiry,
+                    flow,
+                    result,
+                    ws,
+                    revision: 1,
+                  });
                   upsertProposal({
                     id: uid("pr"),
                     enquiryId: enquiry.id,
                     status: "draft",
                     createdAt: new Date().toISOString().slice(0, 10),
                     title: `${enquiry.business} — proposal`,
+                    snapshot,
+                    revision: 1,
                   });
                 }
                 navigate({ to: "/proposals/$enquiryId", params: { enquiryId: enquiry.id } });
@@ -188,7 +190,7 @@ function EnquiryDetail() {
                 subtotal={result.subtotal}
                 discount={result.discount}
                 total={result.total}
-                title="Calculated quote"
+                title={enquiry.quoteSnapshot ? "Submitted quote snapshot" : "Calculated quote"}
               />
             )}
             <div className="qf-card p-4">

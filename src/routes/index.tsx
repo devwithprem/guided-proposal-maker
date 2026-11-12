@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell, PageHeader, StatusPill } from "@/components/quoteflow/AppShell";
 import { useWorkspace } from "@/lib/quoteflow/store";
-import { money, runEngine } from "@/lib/quoteflow/engine";
+import { getEnquiryTotal, money } from "@/lib/quoteflow/engine";
 import { Button } from "@/components/ui/button";
 import { ArrowUpRight, TrendingUp } from "lucide-react";
 
@@ -34,16 +34,9 @@ function Dashboard() {
   const ws = useWorkspace();
 
   const valueOf = (enquiryId: string) => {
-    const enq = ws.enquiries.find((e) => e.id === enquiryId)!;
-    const flow = ws.flows.find((f) => f.id === enq.flowId);
-    if (!flow) return 0;
-    return runEngine({
-      flow,
-      answers: enq.answers,
-      products: ws.products,
-      packages: ws.packages,
-      selectedAddons: enq.selectedAddons,
-    }).total;
+    const enq = ws.enquiries.find((e) => e.id === enquiryId);
+    if (!enq) return 0;
+    return getEnquiryTotal(enq, ws);
   };
 
   const quotes = ws.enquiries.filter((e) => e.status !== "new").length;

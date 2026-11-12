@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell, PageHeader, StatusPill } from "@/components/quoteflow/AppShell";
 import { useWorkspace } from "@/lib/quoteflow/store";
-import { money, runEngine } from "@/lib/quoteflow/engine";
+import { getProposalTotal, money } from "@/lib/quoteflow/engine";
 import { FileText } from "lucide-react";
 
 export const Route = createFileRoute("/proposals/")({
@@ -21,17 +21,7 @@ function ProposalsPage() {
 
   const rows = ws.proposals.map((p) => {
     const enquiry = ws.enquiries.find((e) => e.id === p.enquiryId);
-    const flow = enquiry ? ws.flows.find((f) => f.id === enquiry.flowId) : undefined;
-    const total =
-      enquiry && flow
-        ? runEngine({
-            flow,
-            answers: enquiry.answers,
-            products: ws.products,
-            packages: ws.packages,
-            selectedAddons: enquiry.selectedAddons,
-          }).total
-        : 0;
+    const total = getProposalTotal(p, ws);
     return { proposal: p, enquiry, total };
   });
 
@@ -60,7 +50,9 @@ function ProposalsPage() {
                       {proposal.title}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{enquiry?.customer ?? "—"}</td>
+                  <td className="px-4 py-2.5 text-muted-foreground">
+                    {proposal.snapshot?.customer ?? enquiry?.customer ?? "—"}
+                  </td>
                   <td className="px-4 py-2.5 text-muted-foreground">{proposal.createdAt}</td>
                   <td className="px-4 py-2.5">
                     <StatusPill status={proposal.status} />

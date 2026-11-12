@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, PageHeader, StatusPill } from "@/components/quoteflow/AppShell";
 import { useWorkspace } from "@/lib/quoteflow/store";
-import { money, runEngine } from "@/lib/quoteflow/engine";
+import { getEnquiryTotal, money } from "@/lib/quoteflow/engine";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -36,9 +36,7 @@ function EnquiriesPage() {
     )
     .map((e) => {
       const flow = ws.flows.find((f) => f.id === e.flowId);
-      const value = flow
-        ? runEngine({ flow, answers: e.answers, products: ws.products, packages: ws.packages, selectedAddons: e.selectedAddons }).total
-        : 0;
+      const value = getEnquiryTotal(e, ws);
       return { e, flow, value };
     });
 

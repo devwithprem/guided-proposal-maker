@@ -473,8 +473,20 @@ export function normalizeFormAnswers(rawValues: Record<string, unknown>, flow: F
     const raw = rawValues[comp.variable] ?? rawValues[comp.id];
     if (raw === undefined || raw === null) continue;
     if (comp.type === "number") {
+      if (typeof raw === "string" && raw.trim() === "") continue;
       const n = Number(raw);
       if (Number.isFinite(n)) answers[comp.variable] = n;
+    } else if (comp.type === "multiselect" || comp.type === "checkbox") {
+      if (Array.isArray(raw)) {
+        answers[comp.variable] = raw.map(String).filter((s) => s.trim() !== "");
+      } else if (typeof raw === "string" && raw.trim() !== "") {
+        answers[comp.variable] = raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      } else {
+        answers[comp.variable] = [];
+      }
     } else if (Array.isArray(raw)) {
       answers[comp.variable] = raw.map(String);
     } else if (typeof raw === "boolean") {
@@ -488,12 +500,88 @@ export function normalizeFormAnswers(rawValues: Record<string, unknown>, flow: F
 }
 
 /**
- * Validates a component's value using `@devcode-tech/gamiflow-core` validation engine.
+ * Sanitizes a customer product quantity map so only positive finite integers (1..9999) are retained.
+ */
+export function sanitizeProductQuantities(
+  rawQuantities: Record<string, unknown>,
+  validProductIds?: ReadonlySet<string>,
+): Record<string, number> {
+  const clean: Record<string, number> = {};
+  for (const [productId, rawVal] of Object.entries(rawQuantities)) {
+    if (validProductIds && !validProductIds.has(productId)) continue;
+    const n = Number(rawVal);
+    if (Number.isFinite(n) && n >= 1) {
+      clean[productId] = Math.min(9999, Math.floor(n));
+    }
+  }
+  return clean;
+}
+
+/**
+ * Validates a component's value using `@devcode-tech/gamiflow-core` validation engine
+ * plus explicit QuoteFlow domain rules (option membership, multi-select required checks, and numeric bounds).
  */
 export function validateFlowField(
   comp: FlowComponent,
   value: unknown,
 ): string | null {
+  const isEmpty =
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && value.trim() === "") ||
+    (Array.isArray(value) && value.length === 0) ||
+    (typeof value === "number" && !Number.isFinite(value));
+
+  if (comp.required && isEmpty) {
+    return `${comp.label} is required.`;
+  }
+
+  if (isEmpty) {
+    return null;
+  }
+
+  if (comp.type === "number") {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return `Please enter a valid number for ${comp.label}.`;
+    }
+    if (comp.min !== undefined && n < comp.min) {
+      return `${comp.label} must be at least ${comp.min}.`;
+    }
+    if (comp.max !== undefined && n > comp.max) {
+      return `${comp.label} must be at most ${comp.max}.`;
+    }
+  }
+
+  if (comp.type === "email") {
+    const emailStr = String(value).trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+      return `Please enter a valid email address.`;
+    }
+  }
+
+  if (comp.type === "date") {
+    const dStr = String(value).trim();
+    if (isNaN(Date.parse(dStr))) {
+      return `Please enter a valid date for ${comp.label}.`;
+    }
+  }
+
+  if ((comp.type === "dropdown" || comp.type === "radio") && comp.options && comp.options.length > 0) {
+    const allowed = new Set(comp.options.map((o) => o.value));
+    if (!allowed.has(String(value))) {
+      return `Please select a valid option for ${comp.label}.`;
+    }
+  }
+
+  if ((comp.type === "multiselect" || comp.type === "checkbox") && comp.options && comp.options.length > 0) {
+    const allowed = new Set(comp.options.map((o) => o.value));
+    const items = Array.isArray(value) ? value : [String(value)];
+    if (items.some((item) => !allowed.has(String(item)))) {
+      return `One or more selected options for ${comp.label} are invalid.`;
+    }
+  }
+
   const fieldData = componentToFormFieldData(comp);
   return gamiflowValidateField(fieldData as unknown as Parameters<typeof gamiflowValidateField>[0], value) ?? null;
 }

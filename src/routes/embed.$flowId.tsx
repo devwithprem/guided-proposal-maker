@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { FlowPreview } from "@/components/quoteflow/FlowPreview";
 import { useWorkspace } from "@/lib/quoteflow/store";
 
@@ -16,18 +16,43 @@ export const Route = createFileRoute("/embed/$flowId")({
   component: EmbeddedFlow,
 });
 
+function resolveValidatedParentOrigin(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    if (document.referrer) {
+      const parsed = new URL(document.referrer);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        return parsed.origin;
+      }
+    }
+  } catch {
+    /* fall back to same-origin */
+  }
+  return window.location.origin;
+}
+
 function EmbeddedFlow() {
   const { flowId } = Route.useParams();
   const ws = useWorkspace();
-  const flow = ws.flows.find((f) => f.id === flowId || f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === flowId);
+  const flow = ws.flows.find(
+    (f) => f.id === flowId || f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === flowId,
+  );
 
-  // Report height to the host page so the SDK can size the iframe.
+  const targetOrigin = useMemo(() => resolveValidatedParentOrigin(), []);
+
+  // Report height to the host page using safe resize notification
   useEffect(() => {
-    const post = () =>
-      window.parent?.postMessage(
-        { type: "quoteflow:resize", flowId, height: document.documentElement.scrollHeight },
-        "*",
-      );
+    if (typeof window === "undefined" || window.parent === window) return;
+    const post = () => {
+      try {
+        window.parent?.postMessage(
+          { type: "quoteflow:resize", flowId, height: document.documentElement.scrollHeight },
+          "*",
+        );
+      } catch {
+        /* ignore cross-origin postMessage restriction */
+      }
+    };
     post();
     const ro = new ResizeObserver(post);
     ro.observe(document.body);
@@ -35,12 +60,16 @@ function EmbeddedFlow() {
   }, [flowId]);
 
   if (!flow) {
-    return <div className="p-10 text-center text-[13.5px] text-muted-foreground">This form is no longer available.</div>;
+    return (
+      <div className="p-10 text-center text-[13.5px] text-muted-foreground">
+        This form is no longer available.
+      </div>
+    );
   }
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <FlowPreview flow={flow} record />
+      <FlowPreview flow={flow} record parentOrigin={targetOrigin} />
     </main>
   );
 }

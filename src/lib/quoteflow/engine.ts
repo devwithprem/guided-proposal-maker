@@ -1,9 +1,9 @@
 import type {
   Action,
   Calculation,
-  CalcTerm,
   Condition,
   Enquiry,
+  EnquiryQuoteConfig,
   Flow,
   FlowComponent,
   Operator,
@@ -81,7 +81,7 @@ export function evaluateCondition(c: Condition, answers: Answers): boolean {
       if (Array.isArray(raw)) return raw.length > 0;
       return String(raw).trim().length > 0;
 
-    case "equals":
+    case "equals": {
       if (Array.isArray(raw)) {
         return raw.some((item) => String(item).toLowerCase().trim() === targetVal);
       }
@@ -94,8 +94,9 @@ export function evaluateCondition(c: Condition, answers: Answers): boolean {
         return nRawEq === nValEq;
       }
       return String(raw).toLowerCase().trim() === targetVal;
+    }
 
-    case "not_equals":
+    case "not_equals": {
       if (Array.isArray(raw)) {
         return !raw.some((item) => String(item).toLowerCase().trim() === targetVal);
       }
@@ -108,6 +109,7 @@ export function evaluateCondition(c: Condition, answers: Answers): boolean {
         return nRawNeq !== nValNeq;
       }
       return String(raw).toLowerCase().trim() !== targetVal;
+    }
 
     case "gt":
     case "lt":
@@ -145,7 +147,6 @@ export function evaluateRule(rule: Rule, answers: Answers): boolean {
   if (!rule.conditions || rule.conditions.length === 0) return false;
 
   if (rule.match === "all") {
-    // Every condition must be complete AND pass
     for (const c of rule.conditions) {
       if (!isConditionComplete(c)) return false;
       if (!evaluateCondition(c, answers)) return false;
@@ -153,7 +154,6 @@ export function evaluateRule(rule: Rule, answers: Answers): boolean {
     return true;
   }
 
-  // ANY condition match: must have at least one complete condition that passes
   const completeConditions = rule.conditions.filter(isConditionComplete);
   if (completeConditions.length === 0) return false;
   return completeConditions.some((c) => evaluateCondition(c, answers));
@@ -194,7 +194,6 @@ export function evaluateCalculations(
     }
   }
 
-  // Build dependency graph
   const adj = new Map<string, string[]>();
   const inDegree = new Map<string, number>();
 
@@ -203,19 +202,24 @@ export function evaluateCalculations(
     inDegree.set(calc.id, 0);
   }
 
+  let hasSelfDependency = false;
   for (const calc of calcs) {
     for (const term of calc.terms) {
       if (term.kind === "variable" && term.variable) {
         const depCalc = calcByResultVar.get(term.variable);
-        if (depCalc && depCalc.id !== calc.id) {
-          adj.get(depCalc.id)?.push(calc.id);
-          inDegree.set(calc.id, (inDegree.get(calc.id) ?? 0) + 1);
+        if (depCalc) {
+          if (depCalc.id === calc.id) {
+            hasSelfDependency = true;
+            inDegree.set(calc.id, (inDegree.get(calc.id) ?? 0) + 1);
+          } else {
+            adj.get(depCalc.id)?.push(calc.id);
+            inDegree.set(calc.id, (inDegree.get(calc.id) ?? 0) + 1);
+          }
         }
       }
     }
   }
 
-  // Kahn's algorithm for topological sort
   const queue: string[] = [];
   inDegree.forEach((deg, id) => {
     if (deg === 0) queue.push(id);
@@ -237,10 +241,8 @@ export function evaluateCalculations(
     }
   }
 
-  // Check for circular dependency
-  if (orderedCalcs.length < calcs.length) {
+  if (hasSelfDependency || orderedCalcs.length < calcs.length) {
     errors.push("Circular calculation dependency detected among flow calculations");
-    // Append any unvisited calculations to avoid dropping them
     for (const calc of calcs) {
       if (!orderedCalcs.some((c) => c.id === calc.id)) {
         orderedCalcs.push(calc);
@@ -248,7 +250,6 @@ export function evaluateCalculations(
     }
   }
 
-  // Evaluate in sorted order
   const values: Record<string, number> = {};
   const currentAnswers: Answers = { ...answers };
   const computedList: ComputedCalculation[] = [];
@@ -257,22 +258,39 @@ export function evaluateCalculations(
     let total = 0;
     let isReady = true;
 
+    if (!calc.terms || calc.terms.length === 0) {
+      isReady = false;
+    }
+
     calc.terms.forEach((t, i) => {
       let v = 0;
       if (t.kind === "number") {
-        v = t.number ?? 0;
-      } else {
-        const raw = currentAnswers[t.variable ?? ""];
-        if (raw === undefined || raw === null || String(raw).trim() === "") {
+        if (t.number === undefined || !Number.isFinite(t.number)) {
+          errors.push(`Invalid numeric constant in calculation "${calc.name}"`);
           isReady = false;
           v = 0;
         } else {
-          const parsed = Number(raw);
-          if (Number.isFinite(parsed)) {
-            v = parsed;
-          } else {
+          v = t.number;
+        }
+      } else {
+        const varKey = t.variable?.trim() ?? "";
+        if (!varKey) {
+          isReady = false;
+          v = 0;
+        } else {
+          const raw = currentAnswers[varKey];
+          if (raw === undefined || raw === null || String(raw).trim() === "") {
             isReady = false;
             v = 0;
+          } else {
+            const parsed = Number(raw);
+            if (Number.isFinite(parsed)) {
+              v = parsed;
+            } else {
+              errors.push(`Non-numeric operand "${String(raw)}" for variable "${varKey}" in calculation "${calc.name}"`);
+              isReady = false;
+              v = 0;
+            }
           }
         }
       }
@@ -291,7 +309,10 @@ export function evaluateCalculations(
           break;
         case "÷":
           if (v === 0) {
-            errors.push(`Divide by zero in calculation "${calc.name}"`);
+            if (isReady) {
+              errors.push(`Divide by zero in calculation "${calc.name}"`);
+            }
+            isReady = false;
             total = 0;
           } else {
             total = total / v;
@@ -301,6 +322,12 @@ export function evaluateCalculations(
           total += v;
       }
     });
+
+    if (!Number.isFinite(total)) {
+      errors.push(`Non-finite result in calculation "${calc.name}"`);
+      isReady = false;
+      total = 0;
+    }
 
     const finalVal = isReady ? Math.round(total * 100) / 100 : 0;
     values[calc.resultVariable] = finalVal;
@@ -345,6 +372,78 @@ export function runCalculation(calc: Calculation, answers: Answers): number {
   return Math.round(total * 100) / 100;
 }
 
+/**
+ * Computes which component IDs are hidden given a current answers map.
+ */
+function resolveHiddenComponentIds(flow: Flow, answers: Answers): string[] {
+  const ruleHiddenIds = new Set<string>();
+  const ruleShownIds = new Set<string>();
+
+  for (const rule of flow.rules) {
+    if (!rule.active) continue;
+    if (!evaluateRule(rule, answers)) continue;
+    for (const a of rule.actions) {
+      if (a.type === "hide" && a.targetId) {
+        ruleHiddenIds.add(a.targetId);
+        ruleShownIds.delete(a.targetId);
+      } else if (a.type === "show" && a.targetId) {
+        ruleShownIds.add(a.targetId);
+        ruleHiddenIds.delete(a.targetId);
+      }
+    }
+  }
+
+  const hiddenComponentIds: string[] = [];
+  const allComponents = [...(flow.components ?? []), ...(flow.contactFields ?? [])];
+
+  for (const c of allComponents) {
+    if (ruleHiddenIds.has(c.id)) {
+      hiddenComponentIds.push(c.id);
+    } else if (!ruleShownIds.has(c.id)) {
+      if (c.showWhen && isConditionComplete(c.showWhen) && !evaluateCondition(c.showWhen, answers)) {
+        hiddenComponentIds.push(c.id);
+      }
+    }
+  }
+
+  return hiddenComponentIds;
+}
+
+/**
+ * Strips answers belonging to currently hidden question components so stale draft answers
+ * on hidden fields never trigger rules, fees, recommendations, or calculations.
+ */
+export function getEffectiveAnswers(
+  flow: Flow,
+  draftAnswers: Answers,
+  hiddenComponentIds: readonly string[],
+): Answers {
+  if (hiddenComponentIds.length === 0) return { ...draftAnswers };
+  const hiddenSet = new Set(hiddenComponentIds);
+  const allComponents = [...(flow.components ?? []), ...(flow.contactFields ?? [])];
+
+  // Collect variables bound exclusively to hidden question components
+  const visibleVars = new Set<string>();
+  const hiddenVars = new Set<string>();
+
+  for (const c of allComponents) {
+    if (!c.variable || c.type === "calculation" || c.type === "variable") continue;
+    if (hiddenSet.has(c.id)) {
+      hiddenVars.add(c.variable);
+    } else {
+      visibleVars.add(c.variable);
+    }
+  }
+
+  const effective: Answers = { ...draftAnswers };
+  for (const v of hiddenVars) {
+    if (!visibleVars.has(v)) {
+      delete effective[v];
+    }
+  }
+  return effective;
+}
+
 export interface EngineResult {
   matchedRules: Rule[];
   messages: string[];
@@ -361,35 +460,76 @@ export interface EngineResult {
   resolvedAnswers: Answers;
 }
 
-/**
- * Deterministic business evaluation engine.
- * Supports ALL/ANY rule logic, topological calculations, rule-driven visibility,
- * explicit product selection vs recommendations, and cycle protection for set_value loops.
- */
-export function runEngine(opts: {
+export interface RunEngineOptions {
   flow: Flow;
   answers: Answers;
   products: Product[];
   packages: Package[];
   selectedAddons?: string[] | undefined;
   selectedProducts?: string[] | undefined;
-}): EngineResult {
-  const { flow, products, packages, selectedAddons = [], selectedProducts = [] } = opts;
-  const errors: string[] = [];
-  let currentAnswers: Answers = { ...opts.answers };
+  productQuantities?: Record<string, number> | undefined;
+  quoteConfig?: EnquiryQuoteConfig | undefined;
+}
 
-  // Phase 1: Convergence loop for calculations and set_value actions
+/**
+ * Deterministic business evaluation engine.
+ * Supports ALL/ANY rule logic, topological calculations, rule-driven visibility,
+ * explicit product selection vs recommendations, quantity multiplication,
+ * hidden-answer pruning, and cycle protection for set_value loops.
+ */
+export function runEngine(opts: RunEngineOptions): EngineResult {
+  const {
+    flow,
+    products,
+    packages,
+    selectedAddons = [],
+    selectedProducts = [],
+    productQuantities = {},
+    quoteConfig,
+  } = opts;
+
+  const effectiveSelectedAddons = Array.from(
+    new Set([...selectedAddons, ...(quoteConfig?.selectedAddonIds ?? [])]),
+  );
+  const effectiveSelectedProducts = Array.from(
+    new Set([...selectedProducts, ...(quoteConfig?.selectedProductIds ?? [])]),
+  );
+  const effectiveQuantities: Record<string, number> = {
+    ...productQuantities,
+    ...(quoteConfig?.productQuantities ?? {}),
+  };
+
+  // Seed initial answers + standalone variable defaults
+  const baseDraftAnswers: Answers = { ...opts.answers };
+  for (const c of flow.components) {
+    if (
+      c.type === "variable" &&
+      c.variable &&
+      baseDraftAnswers[c.variable] === undefined &&
+      c.defaultValue !== undefined
+    ) {
+      baseDraftAnswers[c.variable] = c.defaultValue;
+    }
+  }
+
+  // Resolve initial visibility and prune hidden question answers
+  const initialHiddenIds = resolveHiddenComponentIds(flow, baseDraftAnswers);
+  let currentAnswers: Answers = getEffectiveAnswers(flow, baseDraftAnswers, initialHiddenIds);
+
+  // Phase 1: Convergence loop for calculations, visibility, and set_value actions
   const MAX_RULE_PASSES = 10;
   let pass = 0;
   let converged = true;
+  let stateChanged = false;
+  const errorSet = new Set<string>();
 
   let calcEval = evaluateCalculations(flow.components, currentAnswers);
-  errors.push(...calcEval.errors);
+  calcEval.errors.forEach((e) => errorSet.add(e));
   currentAnswers = { ...currentAnswers, ...calcEval.values };
 
   while (pass < MAX_RULE_PASSES) {
     pass++;
-    let stateChanged = false;
+    stateChanged = false;
 
     for (const rule of flow.rules) {
       if (!rule.active) continue;
@@ -406,19 +546,31 @@ export function runEngine(opts: {
       }
     }
 
+    // Re-check visibility if variables changed and prune newly hidden answers
+    const nextHiddenIds = resolveHiddenComponentIds(flow, currentAnswers);
+    const prunedAnswers = getEffectiveAnswers(flow, currentAnswers, nextHiddenIds);
+    for (const key of Object.keys(currentAnswers)) {
+      if (!(key in prunedAnswers)) {
+        delete currentAnswers[key];
+        stateChanged = true;
+      }
+    }
+
     if (stateChanged) {
       calcEval = evaluateCalculations(flow.components, currentAnswers);
-      errors.push(...calcEval.errors);
+      calcEval.errors.forEach((e) => errorSet.add(e));
       currentAnswers = { ...currentAnswers, ...calcEval.values };
     } else {
       break;
     }
   }
 
-  if (pass >= MAX_RULE_PASSES) {
+  if (stateChanged) {
     converged = false;
-    errors.push("Rule evaluation cycle detected: rule actions did not converge after maximum passes.");
+    errorSet.add("Rule evaluation cycle detected: rule actions did not converge after maximum passes.");
   }
+
+  const errors = Array.from(errorSet);
 
   // Phase 2: Final rule action evaluation using converged state
   const matchedRules: Rule[] = [];
@@ -468,11 +620,13 @@ export function runEngine(opts: {
           break;
 
         case "add_fee": {
-          const feeAmount = Math.max(0, a.amount ?? 0);
+          const feeAmount = Math.max(0, Number.isFinite(a.amount) ? (a.amount ?? 0) : 0);
           fees.push({
             id: a.id,
             label: a.label || "Fee",
-            amount: feeAmount,
+            amount: Math.round(feeAmount * 100) / 100,
+            quantity: 1,
+            unitPrice: Math.round(feeAmount * 100) / 100,
             source: "fee",
             sourceRuleId: rule.id,
           });
@@ -481,14 +635,14 @@ export function runEngine(opts: {
         }
 
         case "apply_discount": {
-          const discountAmount = Math.max(0, a.amount ?? 0);
+          const discountAmount = Math.max(0, Number.isFinite(a.amount) ? (a.amount ?? 0) : 0);
           discount += discountAmount;
           messages.push(`Discount applied ($${discountAmount})`);
           break;
         }
 
         case "set_score": {
-          const scoreDelta = a.amount ?? 0;
+          const scoreDelta = Number.isFinite(a.amount) ? (a.amount ?? 0) : 0;
           score += scoreDelta;
           messages.push(`Score ${scoreDelta >= 0 ? "+" : ""}${scoreDelta}`);
           break;
@@ -539,23 +693,31 @@ export function runEngine(opts: {
   const lines: QuoteLine[] = [];
 
   // 1. Base Package & Addons
-  const basePackage = packages.find((p) => p.id === flow.basePackageId);
+  const effectiveBasePackageId =
+    quoteConfig?.basePackageId !== undefined ? quoteConfig.basePackageId : flow.basePackageId;
+  const basePackage = packages.find((p) => p.id === effectiveBasePackageId);
   if (basePackage && !basePackage.archived) {
+    const pkgPrice = Math.round(Math.max(0, basePackage.price) * 100) / 100;
     lines.push({
       id: basePackage.id,
       label: basePackage.name,
       detail: "Base package",
-      amount: Math.max(0, basePackage.price),
+      amount: pkgPrice,
+      quantity: 1,
+      unitPrice: pkgPrice,
       source: "package",
       targetId: basePackage.id,
     });
     for (const addon of basePackage.addons) {
-      if (selectedAddons.includes(addon.id)) {
+      if (effectiveSelectedAddons.includes(addon.id)) {
+        const addonPrice = Math.round(Math.max(0, addon.price) * 100) / 100;
         lines.push({
           id: addon.id,
           label: addon.name,
           detail: "Add-on",
-          amount: Math.max(0, addon.price),
+          amount: addonPrice,
+          quantity: 1,
+          unitPrice: addonPrice,
           source: "addon",
           targetId: addon.id,
         });
@@ -571,24 +733,40 @@ export function runEngine(opts: {
         label: calc.name,
         detail: "Calculated charge",
         amount: calc.value,
+        quantity: 1,
+        unitPrice: calc.value,
         source: "calculation",
         targetId: calc.id,
       });
     }
   }
 
+  // Helper to resolve safe positive integer quantity for a product
+  const resolveProductQuantity = (productId: string): number => {
+    const rawQty = effectiveQuantities[productId];
+    if (rawQty === undefined) return 1;
+    const n = Number(rawQty);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(9999, Math.floor(n));
+  };
+
   // 3. Rule-added products (add_to_quote), respecting remove_from_quote
-  const chargedProductIds = new Set<string>();
+  const ruleChargedProductIds = new Set<string>();
   const validRuleAddedProducts = products.filter(
     (p) => p.active && addedProductIds.has(p.id) && !removedProductIds.has(p.id),
   );
   for (const p of validRuleAddedProducts) {
+    const qty = resolveProductQuantity(p.id) || 1;
+    const unitPrice = Math.round(Math.max(0, p.price) * 100) / 100;
+    const lineAmount = Math.round(unitPrice * qty * 100) / 100;
     const ruleId = addedProductRuleMap.get(p.id);
     const line: QuoteLine = {
       id: p.id,
       label: p.name,
-      detail: p.description,
-      amount: Math.max(0, p.price),
+      detail: qty > 1 ? `${qty} × ${money(unitPrice)} (${p.unit})` : p.description,
+      amount: lineAmount,
+      quantity: qty,
+      unitPrice,
       source: "rule_action",
       targetId: p.id,
     };
@@ -596,40 +774,83 @@ export function runEngine(opts: {
       line.sourceRuleId = ruleId;
     }
     lines.push(line);
-    chargedProductIds.add(p.id);
+    ruleChargedProductIds.add(p.id);
   }
 
-  // 4. Customer explicit selected products (selectedProducts)
-  if (selectedProducts && selectedProducts.length > 0) {
-    for (const prodId of selectedProducts) {
-      if (chargedProductIds.has(prodId)) continue; // prevent duplicate charges
+  // 4. Recommendations: products recommended by active matching rules, active, not removed, and not already rule-charged.
+  // Keeping customer-selected recommendations in `recommendedProducts` ensures the UI can display their selected state and quantity controls!
+  const recommendedProducts = products.filter(
+    (p) =>
+      p.active &&
+      recommendedIds.has(p.id) &&
+      !removedProductIds.has(p.id) &&
+      !ruleChargedProductIds.has(p.id),
+  );
+
+  // 5. Customer explicit selected products (selectedProducts)
+  const chargedCustomerProductIds = new Set<string>();
+  if (effectiveSelectedProducts.length > 0) {
+    for (const prodId of effectiveSelectedProducts) {
+      if (ruleChargedProductIds.has(prodId) || chargedCustomerProductIds.has(prodId)) continue;
+      if (removedProductIds.has(prodId)) continue;
+
       const p = products.find((prod) => prod.id === prodId && prod.active);
-      if (p) {
+      if (!p) continue;
+
+      const qty = resolveProductQuantity(p.id);
+      if (qty <= 0) continue; // Quantity <= 0 means uncharged / removed
+
+      const unitPrice = Math.round(Math.max(0, p.price) * 100) / 100;
+      const lineAmount = Math.round(unitPrice * qty * 100) / 100;
+
+      lines.push({
+        id: p.id,
+        label: p.name,
+        detail: qty > 1 ? `${qty} × ${money(unitPrice)} (${p.unit})` : p.description,
+        amount: lineAmount,
+        quantity: qty,
+        unitPrice,
+        source: "customer_selection",
+        targetId: p.id,
+      });
+      chargedCustomerProductIds.add(p.id);
+    }
+  }
+
+  // 6. Fees
+  lines.push(...fees);
+
+  // 7. Manual quote adjustments (when configured by business owner)
+  if (quoteConfig?.manualAdjustments?.length) {
+    for (const adj of quoteConfig.manualAdjustments) {
+      const qty = Number.isFinite(adj.quantity) && adj.quantity > 0 ? Math.floor(adj.quantity) : 1;
+      const unitPrice = Math.round(Math.max(0, Math.abs(adj.amount)) * 100) / 100;
+      const lineAmount = Math.round(unitPrice * qty * 100) / 100;
+      if (adj.kind === "discount") {
+        discount += lineAmount;
+      } else if (lineAmount > 0) {
         lines.push({
-          id: p.id,
-          label: p.name,
-          detail: p.description,
-          amount: Math.max(0, p.price),
-          source: "customer_selection",
-          targetId: p.id,
+          id: adj.id,
+          label: adj.label || "Manual adjustment",
+          detail: "Manual configuration",
+          amount: lineAmount,
+          quantity: qty,
+          unitPrice,
+          source: "business_manual",
+          targetId: adj.id,
         });
-        chargedProductIds.add(p.id);
       }
     }
   }
 
-  // 5. Fees
-  lines.push(...fees);
-
-  // 6. Subtotal, safe discount, and total
-  const subtotal = Math.round(lines.reduce((s, l) => s + (Number.isFinite(l.amount) ? l.amount : 0), 0) * 100) / 100;
-  const safeDiscount = Math.min(subtotal, Math.round(Math.max(0, Number.isFinite(discount) ? discount : 0) * 100) / 100);
-  const total = Math.max(0, Math.round((subtotal - safeDiscount) * 100) / 100);
-
-  // Recommendations: products recommended by rules, active, not removed, and not already charged
-  const recommendedProducts = products.filter(
-    (p) => p.active && recommendedIds.has(p.id) && !removedProductIds.has(p.id) && !chargedProductIds.has(p.id),
+  // 8. Subtotal, safe discount, and total
+  const subtotal =
+    Math.round(lines.reduce((s, l) => s + (Number.isFinite(l.amount) ? l.amount : 0), 0) * 100) / 100;
+  const safeDiscount = Math.min(
+    subtotal,
+    Math.round(Math.max(0, Number.isFinite(discount) ? discount : 0) * 100) / 100,
   );
+  const total = Math.max(0, Math.round((subtotal - safeDiscount) * 100) / 100);
 
   return {
     matchedRules,
@@ -641,7 +862,11 @@ export function runEngine(opts: {
     total,
     score,
     hiddenComponentIds,
-    calculations: calcEval.calculations.map((c) => ({ name: c.name, variable: c.variable, value: c.value })),
+    calculations: calcEval.calculations.map((c) => ({
+      name: c.name,
+      variable: c.variable,
+      value: c.value,
+    })),
     errors,
     converged,
     resolvedAnswers: currentAnswers,
@@ -702,7 +927,13 @@ export function createProposalSnapshot(opts: {
     business: enquiry.business,
     template: flow.settings.proposalTemplate,
     answers: formattedAnswers,
-    quote: createQuoteSnapshot(flow, result),
+    quote: enquiry.quoteSnapshot
+      ? {
+          ...enquiry.quoteSnapshot,
+          lines: enquiry.quoteSnapshot.lines.map((l) => ({ ...l })),
+          calculations: enquiry.quoteSnapshot.calculations.map((c) => ({ ...c })),
+        }
+      : createQuoteSnapshot(flow, result),
     terms: settings.terms,
     validityDays: settings.validityDays,
     depositPercent: settings.depositPercent,
@@ -724,11 +955,39 @@ export function createProposalSnapshot(opts: {
 }
 
 /**
- * Evaluates a single enquiry's quote using the workspace catalog and customer selections.
+ * Evaluates a single enquiry's quote.
+ * If the enquiry already has an immutable `quoteSnapshot`, its frozen lines and totals are preserved
+ * so subsequent product catalog price changes do not silently mutate historical submitted quotes.
  */
-export function evaluateEnquiryQuote(enquiry: Enquiry, ws: WorkspaceData): EngineResult | null {
+export function evaluateEnquiryQuote(
+  enquiry: Enquiry,
+  ws: WorkspaceData,
+  opts?: { forceLiveRecalculate?: boolean },
+): EngineResult | null {
   const flow = ws.flows.find((f) => f.id === enquiry.flowId);
+  if (!flow && !enquiry.quoteSnapshot) return null;
+
+  if (enquiry.quoteSnapshot && !opts?.forceLiveRecalculate) {
+    const snap = enquiry.quoteSnapshot;
+    return {
+      matchedRules: flow ? flow.rules.filter((r) => snap.matchedRuleIds.includes(r.id)) : [],
+      messages: [],
+      recommendedProducts: ws.products.filter((p) => snap.recommendedProductIds.includes(p.id)),
+      lines: snap.lines.map((l) => ({ ...l })),
+      subtotal: snap.subtotal,
+      discount: snap.discount,
+      total: snap.total,
+      score: snap.score,
+      hiddenComponentIds: [],
+      calculations: snap.calculations.map((c) => ({ ...c })),
+      errors: [],
+      converged: true,
+      resolvedAnswers: { ...enquiry.answers },
+    };
+  }
+
   if (!flow) return null;
+
   return runEngine({
     flow,
     answers: enquiry.answers,
@@ -736,7 +995,20 @@ export function evaluateEnquiryQuote(enquiry: Enquiry, ws: WorkspaceData): Engin
     packages: ws.packages,
     selectedAddons: enquiry.selectedAddons,
     selectedProducts: enquiry.selectedProducts,
+    productQuantities: enquiry.quoteConfig?.productQuantities,
+    quoteConfig: enquiry.quoteConfig,
   });
+}
+
+/**
+ * Returns the authoritative total for an enquiry: reads the immutable quoteSnapshot if present,
+ * falling back to live evaluation for legacy unsnapshotted records.
+ */
+export function getEnquiryTotal(enquiry: Enquiry, ws: WorkspaceData): number {
+  if (enquiry.quoteSnapshot) {
+    return enquiry.quoteSnapshot.total;
+  }
+  return evaluateEnquiryQuote(enquiry, ws)?.total ?? 0;
 }
 
 /**
@@ -749,7 +1021,7 @@ export function getProposalTotal(proposal: Proposal, ws: WorkspaceData): number 
   }
   const enquiry = ws.enquiries.find((e) => e.id === proposal.enquiryId);
   if (!enquiry) return 0;
-  return evaluateEnquiryQuote(enquiry, ws)?.total ?? 0;
+  return getEnquiryTotal(enquiry, ws);
 }
 
 export const money = (n: number) =>
