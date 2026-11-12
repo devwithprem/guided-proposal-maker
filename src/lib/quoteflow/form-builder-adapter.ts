@@ -1,5 +1,7 @@
 import type { Answers } from "./engine";
-import type { Flow, FlowComponent } from "./types";
+import type { ComponentType, Condition, Flow, FlowComponent, Operator, Option } from "./types";
+import type { FormDesign, FormFieldData, LayoutContainer } from "@devcode-tech/form-builder";
+import { validateField as gamiflowValidateField } from "@devcode-tech/gamiflow-core";
 
 /**
  * Integration boundary between QuoteFlow's domain model (`Flow`, `FlowComponent`, `Answers`)
@@ -28,7 +30,24 @@ export interface ExternalFormSchema {
   questionStep: ExternalFormFieldSchema[];
 }
 
-const NON_INPUT_COMPONENT_TYPES = new Set([
+export interface FormBuilderAdapterSchema {
+  title: string;
+  description: string;
+  fields: FormFieldData[];
+  containers: LayoutContainer[];
+  design: FormDesign;
+  schema: {
+    id: string;
+    name: string;
+    title: string;
+    description: string;
+    fields: FormFieldData[];
+    containers: LayoutContainer[];
+    design: FormDesign;
+  };
+}
+
+export const NON_INPUT_COMPONENT_TYPES = new Set([
   "variable",
   "calculation",
   "price-summary",
@@ -48,6 +67,310 @@ export function getCustomerQuestionComponents(
   return flow.components.filter(
     (c) => Boolean(c.variable) && !NON_INPUT_COMPONENT_TYPES.has(c.type) && !hiddenIds.has(c.id),
   );
+}
+
+/**
+ * Converts a QuoteFlow `Condition` to Form Builder's `conditionalLogic` structure.
+ */
+export function conditionToConditionalLogic(
+  condition?: Condition,
+): FormFieldData["conditionalLogic"] | undefined {
+  if (!condition || !condition.variable) return undefined;
+  let cond = condition.operator as string;
+  if (cond === "gt") cond = "greater_than";
+  if (cond === "lt") cond = "less_than";
+  return {
+    dependsOn: condition.variable,
+    condition: cond,
+    value: condition.value,
+  };
+}
+
+/**
+ * Converts Form Builder's `conditionalLogic` structure to QuoteFlow `Condition`.
+ */
+export function conditionalLogicToCondition(
+  logic?: FormFieldData["conditionalLogic"],
+): Condition | undefined {
+  if (!logic || !logic.dependsOn) return undefined;
+  let op: Operator = "equals";
+  const cond = String(logic.condition || "equals");
+  if (cond === "greater_than" || cond === "gt") op = "gt";
+  else if (cond === "less_than" || cond === "lt") op = "lt";
+  else if (cond === "not_equals" || cond === "neq") op = "not_equals";
+  else if (cond === "contains") op = "contains";
+  else op = "equals";
+
+  const condition: Condition = {
+    id: `cond_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    variable: logic.dependsOn,
+    operator: op,
+    value: logic.value !== undefined && logic.value !== null ? String(logic.value) : "",
+  };
+  return condition;
+}
+
+/**
+ * Converts a QuoteFlow `FlowComponent` to Form Builder `FormFieldData`.
+ */
+export function componentToFormFieldData(comp: FlowComponent): FormFieldData {
+  const variable = comp.variable ?? comp.id;
+  const field: FormFieldData = {
+    id: comp.id,
+    type: comp.type,
+    label: comp.label,
+    name: variable,
+    mapping: variable,
+  };
+
+  if (comp.description !== undefined && comp.description !== "") {
+    field.placeholder = comp.description;
+  }
+  if (comp.required !== undefined) {
+    field.required = comp.required;
+  }
+  if (comp.min !== undefined) {
+    field.min = comp.min;
+  }
+  if (comp.max !== undefined) {
+    field.max = comp.max;
+  }
+  if (comp.min !== undefined || comp.max !== undefined || comp.required !== undefined) {
+    field["validation"] = {
+      ...(comp.required !== undefined ? { required: comp.required } : {}),
+      ...(comp.min !== undefined ? { min: comp.min } : {}),
+      ...(comp.max !== undefined ? { max: comp.max } : {}),
+    };
+  }
+  if (comp.options && comp.options.length > 0) {
+    field.options = comp.options.map((o) => ({ id: o.id, label: o.label, value: o.value }));
+  }
+  const condLogic = conditionToConditionalLogic(comp.showWhen);
+  if (condLogic) {
+    field.conditionalLogic = condLogic;
+  }
+
+  return field;
+}
+
+/**
+ * Converts Form Builder `FormFieldData` back to a QuoteFlow `FlowComponent`,
+ * preserving variable lock status, existing options identity, and non-input metadata.
+ */
+export function formFieldDataToComponent(
+  field: FormFieldData,
+  existing?: FlowComponent,
+): FlowComponent {
+  const baseType = (field.type as ComponentType) || (existing ? existing.type : "text");
+  const comp: FlowComponent = {
+    id: field.id,
+    type: baseType,
+    label: field.label || (existing ? existing.label : "Untitled Question"),
+  };
+
+  // Variable identity preservation
+  const candidateVar = field.mapping || field.name;
+  if (existing?.variableLocked && existing.variable) {
+    comp.variable = existing.variable;
+    comp.variableLocked = true;
+  } else if (candidateVar) {
+    comp.variable = candidateVar;
+    comp.variableLocked = true;
+  } else if (existing?.variable) {
+    comp.variable = existing.variable;
+    comp.variableLocked = true;
+  } else {
+    comp.variable = field.id;
+    comp.variableLocked = true;
+  }
+
+  if (field.placeholder !== undefined && field.placeholder !== "") {
+    comp.description = field.placeholder;
+  } else if (existing?.description !== undefined) {
+    comp.description = existing.description;
+  }
+
+  if (field.required !== undefined) {
+    comp.required = Boolean(field.required);
+  } else if (existing?.required !== undefined) {
+    comp.required = existing.required;
+  }
+
+  const vValidation = field["validation"] as { min?: number | undefined; max?: number | undefined } | undefined;
+  const vMin = typeof field.min === "number" ? field.min : vValidation?.min;
+  const vMax = typeof field.max === "number" ? field.max : vValidation?.max;
+
+  if (vMin !== undefined) {
+    comp.min = vMin;
+  } else if (existing?.min !== undefined) {
+    comp.min = existing.min;
+  }
+
+  if (vMax !== undefined) {
+    comp.max = vMax;
+  } else if (existing?.max !== undefined) {
+    comp.max = existing.max;
+  }
+
+  if (existing?.unit !== undefined) {
+    comp.unit = existing.unit;
+  }
+
+  if (field.options && Array.isArray(field.options) && field.options.length > 0) {
+    const existingOptMap = new Map((existing?.options ?? []).map((o) => [o.value, o]));
+    comp.options = (field.options as Array<{ id?: string; label?: string; value: string }>).map((opt, idx) => {
+      const match = existingOptMap.get(opt.value);
+      return {
+        id: opt.id || match?.id || `opt_${idx}`,
+        label: opt.label || match?.label || opt.value,
+        value: opt.value,
+      };
+    });
+  } else if (existing?.options !== undefined) {
+    comp.options = existing.options.map((o) => ({ ...o }));
+  }
+
+  const cond = conditionalLogicToCondition(field.conditionalLogic);
+  if (cond) {
+    comp.showWhen = cond;
+  } else if (existing?.showWhen) {
+    comp.showWhen = existing.showWhen;
+  }
+
+  // Preserve calculation if previously attached
+  if (existing?.calculation) {
+    comp.calculation = existing.calculation;
+  }
+
+  return comp;
+}
+
+/**
+ * Converts a QuoteFlow `Flow` into a full Form Builder schema object
+ * with fields, containers, and theme design.
+ */
+export function toFormBuilderSchema(
+  flow: Flow,
+  options?: { includeContactFields?: boolean },
+): FormBuilderAdapterSchema {
+  const componentsToConvert = options?.includeContactFields
+    ? [...(flow.contactFields ?? []), ...getCustomerQuestionComponents(flow)]
+    : getCustomerQuestionComponents(flow);
+
+  const fields = componentsToConvert.map(componentToFormFieldData);
+  const containerId = `container_${flow.id}`;
+  const containers: LayoutContainer[] = [
+    {
+      id: containerId,
+      type: "single-column",
+      columns: 1,
+      children: fields.map((f) => f.id),
+    },
+  ];
+
+  const design: FormDesign = {
+    backgroundColor: "#ffffff",
+    fontFamily: "font-sans",
+    fontSize: "text-base",
+    labelColor: "#374151",
+    inputTextColor: "#111827",
+    helperColor: "#6B7280",
+    inputBorderColor: "#D1D5DB",
+    brandColor: "#0f766e",
+    spacing: {
+      container: "p-6",
+      fields: "space-y-5",
+      columnGap: "1.5rem",
+      rowGap: "1.5rem",
+      fieldSpacing: "1.25rem",
+    },
+    submitButton: {
+      text: flow.settings?.submitLabel || "Submit",
+      backgroundColor: "#0f766e",
+      textColor: "#ffffff",
+    },
+  };
+
+  return {
+    title: flow.name,
+    description: flow.description || "",
+    fields,
+    containers,
+    design,
+    schema: {
+      id: flow.id,
+      name: flow.name,
+      title: flow.name,
+      description: flow.description || "",
+      fields,
+      containers,
+      design,
+    },
+  };
+}
+
+/**
+ * Merges updated fields from Form Builder back into QuoteFlow's `Flow`,
+ * preserving all calculations, standalone variables, price summaries, recommendations,
+ * and locked variable names without loss of domain metadata.
+ */
+export function mergeFormBuilderDataIntoFlow(
+  existingFlow: Flow,
+  data: { fields: FormFieldData[]; containers?: LayoutContainer[] },
+): Flow {
+  const incomingFields = data.fields ?? [];
+  const incomingById = new Map(incomingFields.map((f) => [f.id, f]));
+  const contactFieldIds = new Set((existingFlow.contactFields ?? []).map((c) => c.id));
+
+  // 1. Update contact fields if any match
+  const updatedContactFields = (existingFlow.contactFields ?? []).map((cf) => {
+    const updated = incomingById.get(cf.id);
+    return updated ? formFieldDataToComponent(updated, cf) : cf;
+  });
+
+  // 2. Identify fields intended for components
+  const existingComponentsById = new Map(existingFlow.components.map((c) => [c.id, c]));
+  const updatedComponents: FlowComponent[] = [];
+
+  // Determine field order from containers if available, otherwise from fields array
+  let orderedFieldIds: string[] = [];
+  if (data.containers && data.containers.length > 0) {
+    orderedFieldIds = data.containers.flatMap((c) => c.children ?? []);
+  }
+  if (orderedFieldIds.length === 0) {
+    orderedFieldIds = incomingFields.map((f) => f.id);
+  }
+
+  // Preserve non-input components and update existing questions
+  for (const comp of existingFlow.components) {
+    if (NON_INPUT_COMPONENT_TYPES.has(comp.type)) {
+      updatedComponents.push(comp);
+      continue;
+    }
+    const incoming = incomingById.get(comp.id);
+    if (incoming) {
+      updatedComponents.push(formFieldDataToComponent(incoming, comp));
+    } else {
+      updatedComponents.push(comp);
+    }
+  }
+
+  // Append new fields added through the Form Builder
+  for (const fieldId of orderedFieldIds) {
+    if (contactFieldIds.has(fieldId)) continue;
+    if (!existingComponentsById.has(fieldId)) {
+      const fieldData = incomingById.get(fieldId);
+      if (fieldData) {
+        updatedComponents.push(formFieldDataToComponent(fieldData));
+      }
+    }
+  }
+
+  return {
+    ...existingFlow,
+    contactFields: updatedContactFields,
+    components: updatedComponents,
+  };
 }
 
 /**
@@ -154,10 +477,23 @@ export function normalizeFormAnswers(rawValues: Record<string, unknown>, flow: F
       if (Number.isFinite(n)) answers[comp.variable] = n;
     } else if (Array.isArray(raw)) {
       answers[comp.variable] = raw.map(String);
+    } else if (typeof raw === "boolean") {
+      answers[comp.variable] = raw ? "true" : "false";
     } else {
       answers[comp.variable] = String(raw);
     }
   }
 
   return answers;
+}
+
+/**
+ * Validates a component's value using `@devcode-tech/gamiflow-core` validation engine.
+ */
+export function validateFlowField(
+  comp: FlowComponent,
+  value: unknown,
+): string | null {
+  const fieldData = componentToFormFieldData(comp);
+  return gamiflowValidateField(fieldData as unknown as Parameters<typeof gamiflowValidateField>[0], value) ?? null;
 }

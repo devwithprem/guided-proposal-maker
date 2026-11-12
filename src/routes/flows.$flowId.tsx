@@ -4,6 +4,8 @@ import { AppShell, Logo, StatusPill } from "@/components/quoteflow/AppShell";
 import { RuleList } from "@/components/quoteflow/RuleBuilder";
 import { proposalTemplates } from "@/components/quoteflow/ProposalDocument";
 import { FlowPreview, PriceSummary } from "@/components/quoteflow/FlowPreview";
+import { ClientOnlyFormBuilder } from "@/components/quoteflow/ClientOnlyFormBuilder";
+import { ClientOnlyFormPreview } from "@/components/quoteflow/ClientOnlyFormPreview";
 import { useActions, useWorkspace } from "@/lib/quoteflow/store";
 import { uid } from "@/lib/quoteflow/seed";
 import {
@@ -129,6 +131,8 @@ function FlowBuilder() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [step, setStep] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [builderView, setBuilderView] = useState<"canvas" | "visual">("canvas");
+  const [previewView, setPreviewView] = useState<"interactive" | "visual">("interactive");
 
   if (!flow) {
     return (
@@ -307,7 +311,48 @@ function FlowBuilder() {
 
       {/* STEP 2 — questions */}
       {step === 1 && (
-        <div className="grid w-full grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
+        <div className="flex flex-col w-full">
+          {/* View Mode Toggle Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-sidebar/40 px-5 py-2">
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card p-1 text-[12px]">
+              <button
+                type="button"
+                onClick={() => setBuilderView("canvas")}
+                className={cn(
+                  "rounded-md px-3 py-1 font-medium transition-colors",
+                  builderView === "canvas" ? "bg-brand text-brand-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Canvas Editor
+              </button>
+              <button
+                type="button"
+                onClick={() => setBuilderView("visual")}
+                className={cn(
+                  "rounded-md px-3 py-1 font-medium transition-colors",
+                  builderView === "visual" ? "bg-brand text-brand-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Visual Form Builder
+              </button>
+            </div>
+            <span className="text-[12px] text-muted-foreground">
+              {builderView === "canvas"
+                ? "Drag & drop components, configure business variables and calculations"
+                : "Advanced drag-and-drop form builder powered by @devcode-tech/form-builder"}
+            </span>
+          </div>
+
+          {builderView === "visual" ? (
+            <div className="p-5">
+              <ClientOnlyFormBuilder
+                flow={flow}
+                onSaveFlow={save}
+                onClose={() => setBuilderView("canvas")}
+              />
+            </div>
+          ) : (
+            <div className="grid w-full grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
           {/* LEFT: component library */}
           <div className="hidden border-r border-border bg-sidebar/60 p-3 lg:block">
             <p className="qf-label mb-2">Components</p>
@@ -446,6 +491,8 @@ function FlowBuilder() {
               </div>
             )}
           </div>
+        </div>
+          )}
         </div>
       )}
 
@@ -604,9 +651,39 @@ function FlowBuilder() {
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-4 py-2">
               <Logo />
-              <span className="text-[12px] text-muted-foreground">Live customer preview</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center rounded-md border border-border bg-sidebar/50 p-0.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewView("interactive")}
+                    className={cn(
+                      "rounded px-2 py-0.5 font-medium transition-colors",
+                      previewView === "interactive" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Interactive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewView("visual")}
+                    className={cn(
+                      "rounded px-2 py-0.5 font-medium transition-colors",
+                      previewView === "visual" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    FormSurface
+                  </button>
+                </div>
+                <span className="text-[12px] text-muted-foreground">Live customer preview</span>
+              </div>
             </div>
-            <FlowPreview flow={flow} />
+            {previewView === "interactive" ? (
+              <FlowPreview flow={flow} />
+            ) : (
+              <div className="p-6">
+                <ClientOnlyFormPreview flow={flow} />
+              </div>
+            )}
           </div>
         </div>
       )}
