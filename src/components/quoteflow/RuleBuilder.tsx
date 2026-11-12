@@ -509,19 +509,98 @@ function RuleTester({
           ))}
         </div>
         {result && (
-          <div className="rounded-lg border border-border bg-muted/40 p-3 text-[13px]">
-            {result.messages.length === 0 ? (
-              <p className="text-muted-foreground">No rules matched these answers.</p>
-            ) : (
-              <ul className="space-y-1">
-                {result.messages.map((m, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <Check className="h-3.5 w-3.5 text-brand" /> {m}
-                  </li>
-                ))}
-              </ul>
+          <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3 text-[13px]">
+            {result.errors.length > 0 && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-[12.5px] text-destructive">
+                <p className="font-semibold">Engine Warning / Error:</p>
+                <ul className="mt-1 list-inside list-disc space-y-0.5">
+                  {result.errors.map((err, i) => (
+                    <li key={i}>{err}</li>
+                  ))}
+                </ul>
+              </div>
             )}
-            <p className="mt-2 border-t border-border pt-2 font-medium">Quote total {money(result.total)}</p>
+
+            <div>
+              <p className="qf-label mb-1">Matched Rules ({result.matchedRules.length})</p>
+              {result.matchedRules.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground">No rules matched these answers.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {result.matchedRules.map((r) => (
+                    <span key={r.id} className="rounded bg-brand-soft px-2 py-0.5 text-[11.5px] font-medium text-brand">
+                      {r.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {result.calculations.length > 0 && (
+              <div className="border-t border-border pt-2">
+                <p className="qf-label mb-1">Calculated Variables</p>
+                <div className="space-y-1">
+                  {result.calculations.map((c) => (
+                    <div key={c.variable} className="flex justify-between text-[12.5px]">
+                      <span className="text-muted-foreground">
+                        {c.name} <code className="text-[11px]">({c.variable})</code>
+                      </span>
+                      <span className="font-mono font-medium">{c.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="border-t border-border pt-2">
+              <p className="qf-label mb-1">Quote Line Items (Charged)</p>
+              {result.lines.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground">No line items charged.</p>
+              ) : (
+                <div className="space-y-1">
+                  {result.lines.map((l, i) => (
+                    <div key={`${l.id}_${i}`} className="flex justify-between text-[12.5px]">
+                      <span>
+                        {l.label}{" "}
+                        {l.detail && <span className="text-[11px] text-muted-foreground">({l.detail})</span>}
+                      </span>
+                      <span className="tabular-nums font-medium">{money(l.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {result.recommendedProducts.length > 0 && (
+              <div className="border-t border-border pt-2">
+                <p className="qf-label mb-1">Recommended Products (Optional, Not Charged)</p>
+                <div className="space-y-1">
+                  {result.recommendedProducts.map((p) => (
+                    <div key={p.id} className="flex justify-between text-[12.5px] text-muted-foreground">
+                      <span>{p.name}</span>
+                      <span className="text-[11px] font-medium text-brand">Recommended ({money(p.price)})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="border-t border-border pt-2 font-medium">
+              <div className="flex justify-between text-[13px]">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span>{money(result.subtotal)}</span>
+              </div>
+              {result.discount > 0 && (
+                <div className="flex justify-between text-[13px] text-brand">
+                  <span>Discount</span>
+                  <span>-{money(result.discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-1 text-[14px] font-semibold">
+                <span>Quote Total</span>
+                <span>{money(result.total)}</span>
+              </div>
+            </div>
           </div>
         )}
         <DialogFooter>

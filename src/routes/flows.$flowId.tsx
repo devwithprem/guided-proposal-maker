@@ -1175,6 +1175,13 @@ function CalculationCard({
         <span className="text-[14px] text-muted-foreground">=</span>
         <span className="rounded-md bg-brand-soft px-2.5 py-1 text-[13px] font-medium text-brand">{calc.name}</span>
       </div>
+      <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5">
+        <span className="text-[12px] text-muted-foreground">Charge as line item in quote</span>
+        <Switch
+          checked={Boolean(calc.includeInQuote)}
+          onCheckedChange={(checked) => setCalc({ includeInQuote: checked })}
+        />
+      </div>
       <Button
         variant="ghost"
         size="sm"
