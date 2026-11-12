@@ -22,6 +22,11 @@ function getSessionSecret(): string {
   if (secret && secret.trim().length > 0) {
     return secret.trim();
   }
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error(
+      "[QuoteFlow Auth] QUOTEFLOW_SESSION_SECRET environment variable must be set in production.",
+    );
+  }
   return "quoteflow-dev-secret-do-not-use-in-production";
 }
 

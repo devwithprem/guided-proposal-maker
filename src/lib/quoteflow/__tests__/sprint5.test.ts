@@ -10,6 +10,7 @@ import {
 } from "../server/db.server";
 import {
   approveAndIssueProposalAuthoritative,
+  getPublicFlowAuthoritative,
   getPublicProposalByTokenAuthoritative,
   respondToPublicProposalAuthoritative,
   submitCustomerEnquiryAuthoritative,
@@ -450,5 +451,32 @@ describe("Sprint 5: Shared Persistence, Server-Authoritative Quotes & Secure Pro
     const found = reopenedWs.enquiries.find((e) => e.id === submission.enquiry.id);
     expect(found).toBeDefined();
     expect(found?.customer).toBe("Nate");
+  });
+
+  // Scenario 19: Security: Authentication secrets fail closed in production
+  it("Scenario 19: Authentication secrets fail closed in production when unset", () => {
+    const origEnv = process.env["NODE_ENV"];
+    const origSecret = process.env["QUOTEFLOW_SESSION_SECRET"];
+    const origPasscode = process.env["QUOTEFLOW_ADMIN_PASSCODE"];
+
+    process.env["NODE_ENV"] = "production";
+    delete process.env["QUOTEFLOW_SESSION_SECRET"];
+    delete process.env["QUOTEFLOW_ADMIN_PASSCODE"];
+
+    expect(() => createAdminSessionToken()).toThrow(/QUOTEFLOW_SESSION_SECRET.*must be set in production/);
+    expect(() => verifyAdminPasscode("any")).toThrow(/QUOTEFLOW_ADMIN_PASSCODE.*must be set in production/);
+
+    process.env["NODE_ENV"] = origEnv;
+    if (origSecret !== undefined) process.env["QUOTEFLOW_SESSION_SECRET"] = origSecret;
+    if (origPasscode !== undefined) process.env["QUOTEFLOW_ADMIN_PASSCODE"] = origPasscode;
+  });
+
+  // Scenario 20: Security: Public flow endpoint never leaks webhookUrl or notifyEmail
+  it("Scenario 20: Public flow endpoint strips webhookUrl and notifyEmail from public configuration", () => {
+    const res = getPublicFlowAuthoritative("fl_event_rental");
+
+    expect(res.flow).toBeDefined();
+    expect(res.flow.submission.webhookUrl).toBe("");
+    expect(res.flow.submission.notifyEmail).toBe("");
   });
 });

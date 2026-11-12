@@ -21,6 +21,7 @@ import { migrateWorkspaceData, validateWorkspacePayload } from "../migrations";
 import type {
   Enquiry,
   EnquiryQuoteConfig,
+  Flow,
   Proposal,
   ProposalSnapshot,
   ProposalStatus,
@@ -41,6 +42,42 @@ export interface SubmitCustomerEnquiryResult {
   enquiry: Enquiry;
   proposal: Proposal | null;
   result: EngineResult;
+}
+
+/**
+ * Public flow retrieval for embed widget.
+ * Validates flow is live and strips sensitive submission settings (webhookUrl, notifyEmail)
+ * so private webhook tokens and recipient emails never leak to public customer browsers.
+ */
+export function getPublicFlowAuthoritative(
+  flowId: string,
+  workspaceId = "ws_default",
+): {
+  flow: Flow;
+  products: WorkspaceData["products"];
+  packages: WorkspaceData["packages"];
+} {
+  const ws = getServerWorkspace(workspaceId);
+  const flow = ws.flows.find((f) => f.id === flowId);
+  if (!flow) {
+    throw new Error(`Flow '${flowId}' not found.`);
+  }
+  if (flow.status !== "live") {
+    throw new Error(`Flow '${flow.name}' is currently ${flow.status} and unavailable.`);
+  }
+  const sanitizedFlow: Flow = {
+    ...flow,
+    submission: {
+      ...flow.submission,
+      notifyEmail: "",
+      webhookUrl: "",
+    },
+  };
+  return {
+    flow: sanitizedFlow,
+    products: ws.products.filter((p) => p.active),
+    packages: ws.packages.filter((pkg) => !pkg.archived),
+  };
 }
 
 /**

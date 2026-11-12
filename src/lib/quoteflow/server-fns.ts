@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getCookie } from "@tanstack/react-start/server";
 import {
   approveAndIssueProposalAuthoritative,
+  getPublicFlowAuthoritative,
   getPublicProposalByTokenAuthoritative,
   importLegacyWorkspaceAuthoritative,
   respondToPublicProposalAuthoritative,
@@ -31,19 +32,7 @@ export const getPublicFlowServerFn = createServerFn({ method: "GET" })
     products: Product[];
     packages: Package[];
   }> => {
-    const ws = getServerWorkspace();
-    const flow = ws.flows.find((f) => f.id === data.flowId);
-    if (!flow) {
-      throw new Error(`Flow '${data.flowId}' not found.`);
-    }
-    if (flow.status !== "live") {
-      throw new Error(`Flow '${flow.name}' is currently ${flow.status} and unavailable.`);
-    }
-    return {
-      flow,
-      products: ws.products.filter((p) => p.active),
-      packages: ws.packages.filter((pkg) => !pkg.archived),
-    };
+    return getPublicFlowAuthoritative(data.flowId);
   });
 
 export const submitCustomerEnquiryServerFn = createServerFn({ method: "POST" })
