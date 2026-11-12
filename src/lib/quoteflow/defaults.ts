@@ -8,7 +8,7 @@ import type {
   WorkspaceSettings,
 } from "./types";
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export function defaultContactFields(): FlowComponent[] {
   return [
@@ -99,10 +99,12 @@ export function withEnquiryDefaults(enquiry: Enquiry, flow?: Flow): Enquiry {
   };
 }
 
-/** Ensures legacy Proposal records preserve their status and revision number. */
+/** Ensures legacy Proposal records preserve their status, revision number, and history arrays. */
 export function withProposalDefaults(proposal: Proposal): Proposal {
   return {
     ...proposal,
     revision: proposal.revision ?? 1,
+    revisionHistory: Array.isArray(proposal.revisionHistory) ? proposal.revisionHistory : [],
+    statusHistory: Array.isArray(proposal.statusHistory) ? proposal.statusHistory : [],
   };
 }

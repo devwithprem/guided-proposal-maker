@@ -262,7 +262,26 @@ export interface Enquiry {
   notes: string;
 }
 
-export type ProposalStatus = "draft" | "review" | "sent" | "accepted" | "declined";
+export type ProposalStatus =
+  | "draft"
+  | "review"
+  | "approved"
+  | "sent"
+  | "accepted"
+  | "changes_requested"
+  | "declined";
+
+export type ProposalActorType = "system" | "business" | "customer";
+
+export interface ProposalStatusHistoryEntry {
+  id: string;
+  proposalId: string;
+  fromStatus: ProposalStatus | null;
+  toStatus: ProposalStatus;
+  actor: ProposalActorType;
+  note?: string | undefined;
+  timestamp: string;
+}
 
 export interface ProposalSnapshot {
   revision: number;
@@ -285,6 +304,9 @@ export interface ProposalSnapshot {
   terms: string;
   validityDays: number;
   depositPercent: number;
+  originalSubmittedTotal?: number | undefined;
+  proposalNotes?: string | undefined;
+  expiresAt?: string | undefined;
 }
 
 export interface Proposal {
@@ -292,11 +314,44 @@ export interface Proposal {
   enquiryId: string;
   status: ProposalStatus;
   createdAt: string;
+  updatedAt?: string | undefined;
   title: string;
-  /** Immutable snapshot preserved when a proposal is generated or sent */
+  /** Immutable snapshot preserved when a proposal is generated or approved */
   snapshot?: ProposalSnapshot | undefined;
-  /** Revision number, incremented when creating a new revision of a sent proposal */
+  /** Revision number, incremented when creating a new revision of a proposal */
   revision?: number | undefined;
+  revisionHistory?: ProposalSnapshot[] | undefined;
+  statusHistory?: ProposalStatusHistoryEntry[] | undefined;
+  /** SHA-256 hash of the public proposal access token */
+  publicTokenHash?: string | undefined;
+  publicTokenExpiresAt?: string | undefined;
+  customerResponseNote?: string | undefined;
+  acceptedByName?: string | undefined;
+  respondedAt?: string | undefined;
+}
+
+export interface PublicProposalView {
+  proposalId: string;
+  enquiryId: string;
+  status: ProposalStatus;
+  revision: number;
+  title: string;
+  businessName: string;
+  customerName: string;
+  customerEmail: string;
+  eventDate?: string | undefined;
+  location?: string | undefined;
+  template: ProposalTemplateId;
+  terms: string;
+  depositPercent: number;
+  validityDays: number;
+  proposalNotes?: string | undefined;
+  expiresAt?: string | undefined;
+  quote: QuoteSnapshot;
+  respondedAt?: string | undefined;
+  customerResponseNote?: string | undefined;
+  acceptedByName?: string | undefined;
+  canRespond: boolean;
 }
 
 export interface WorkspaceSettings {
@@ -317,5 +372,6 @@ export interface WorkspaceData {
   packages: Package[];
   enquiries: Enquiry[];
   proposals: Proposal[];
+  proposalStatusHistory?: ProposalStatusHistoryEntry[] | undefined;
   settings?: WorkspaceSettings | undefined;
 }

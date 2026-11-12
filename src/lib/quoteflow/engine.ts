@@ -10,7 +10,9 @@ import type {
   Package,
   Product,
   Proposal,
+  ProposalActorType,
   ProposalSnapshot,
+  ProposalStatus,
   QuoteLine,
   QuoteSnapshot,
   Rule,
@@ -904,10 +906,16 @@ export function createProposalSnapshot(opts: {
   result: EngineResult;
   ws: WorkspaceData;
   revision?: number | undefined;
+  proposalNotes?: string | undefined;
+  expiresAt?: string | undefined;
+  originalSubmittedTotal?: number | undefined;
 }): ProposalSnapshot {
   const { enquiry, flow, result, ws, revision = 1 } = opts;
   const settings = ws.settings ?? defaultWorkspaceSettings();
-  const basePackage = ws.packages.find((p) => p.id === flow.basePackageId);
+  const effectiveBasePkgId = enquiry.quoteConfig?.basePackageId !== undefined
+    ? enquiry.quoteConfig.basePackageId
+    : flow.basePackageId;
+  const basePackage = ws.packages.find((p) => p.id === effectiveBasePkgId);
   const allComponents = [...(flow.contactFields ?? []), ...flow.components];
 
   const formattedAnswers = Object.entries(enquiry.answers).map(([variable, val]) => {
@@ -927,17 +935,28 @@ export function createProposalSnapshot(opts: {
     business: enquiry.business,
     template: flow.settings.proposalTemplate,
     answers: formattedAnswers,
-    quote: enquiry.quoteSnapshot
-      ? {
-          ...enquiry.quoteSnapshot,
-          lines: enquiry.quoteSnapshot.lines.map((l) => ({ ...l })),
-          calculations: enquiry.quoteSnapshot.calculations.map((c) => ({ ...c })),
-        }
-      : createQuoteSnapshot(flow, result),
+    quote: createQuoteSnapshot(flow, result),
     terms: settings.terms,
     validityDays: settings.validityDays,
     depositPercent: settings.depositPercent,
   };
+
+  if (opts.originalSubmittedTotal !== undefined) {
+    snapshot.originalSubmittedTotal = opts.originalSubmittedTotal;
+  } else if (enquiry.quoteSnapshot?.total !== undefined) {
+    snapshot.originalSubmittedTotal = enquiry.quoteSnapshot.total;
+  }
+
+  if (opts.proposalNotes !== undefined) {
+    snapshot.proposalNotes = opts.proposalNotes;
+  }
+
+  if (opts.expiresAt !== undefined) {
+    snapshot.expiresAt = opts.expiresAt;
+  } else {
+    const days = Number.isFinite(settings.validityDays) && settings.validityDays > 0 ? settings.validityDays : 14;
+    snapshot.expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+  }
 
   if (enquiry.eventDate !== undefined) snapshot.eventDate = enquiry.eventDate;
   if (enquiry.location !== undefined) snapshot.location = enquiry.location;
@@ -952,6 +971,76 @@ export function createProposalSnapshot(opts: {
   }
 
   return snapshot;
+}
+
+/**
+ * Evaluates the working proposal quote for an enquiry against current catalog prices,
+ * taking into account any business overrides in enquiry.quoteConfig (e.g. package, addons,
+ * recommended products, product quantities, manual adjustments).
+ * This allows the business owner to modify the proposed quote without touching the frozen enquiry.quoteSnapshot.
+ */
+export function evaluateWorkingEnquiryQuote(
+  enquiry: Enquiry,
+  ws: WorkspaceData,
+): EngineResult | null {
+  const flow = ws.flows.find((f) => f.id === enquiry.flowId);
+  if (!flow) return null;
+
+  const quoteConfig = enquiry.quoteConfig;
+  return runEngine({
+    flow,
+    answers: enquiry.answers,
+    products: ws.products,
+    packages: ws.packages,
+    selectedAddons: quoteConfig?.selectedAddonIds ?? enquiry.selectedAddons,
+    selectedProducts: quoteConfig?.selectedProductIds ?? enquiry.selectedProducts,
+    productQuantities: quoteConfig?.productQuantities,
+    quoteConfig,
+  });
+}
+
+/**
+ * Validates whether a state transition on a proposal is permitted by the given actor.
+ */
+export function validateProposalStatusTransition(
+  from: ProposalStatus | null,
+  to: ProposalStatus,
+  actor: ProposalActorType,
+): { valid: boolean; error?: string } {
+  if (actor === "customer") {
+    if (from !== "approved" && from !== "sent") {
+      if (from === "accepted") {
+        return { valid: false, error: "Proposal has already been accepted." };
+      }
+      if (from === "changes_requested") {
+        return { valid: false, error: "Changes have already been requested; awaiting updated proposal." };
+      }
+      if (from === "declined") {
+        return { valid: false, error: "Proposal has already been declined." };
+      }
+      return {
+        valid: false,
+        error: `Customer cannot respond to proposal in status '${from ?? "unknown"}'.`,
+      };
+    }
+    if (to === "accepted" || to === "changes_requested" || to === "declined") {
+      return { valid: true };
+    }
+    return {
+      valid: false,
+      error: `Customer is not permitted to transition proposal to status '${to}'.`,
+    };
+  }
+
+  if (actor === "system") {
+    return { valid: true };
+  }
+
+  // actor === "business"
+  if (to === from && to !== "approved") {
+    return { valid: false, error: `Proposal is already in status '${to}'.` };
+  }
+  return { valid: true };
 }
 
 /**

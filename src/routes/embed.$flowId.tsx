@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 import { FlowPreview } from "@/components/quoteflow/FlowPreview";
 import { useWorkspace } from "@/lib/quoteflow/store";
+import { getPublicFlowServerFn } from "@/lib/quoteflow/server-fns";
 
 export const Route = createFileRoute("/embed/$flowId")({
   head: () => ({
@@ -13,6 +14,14 @@ export const Route = createFileRoute("/embed/$flowId")({
       { property: "og:description", content: "Answer a few questions and get an instant, itemised estimate." },
     ],
   }),
+  loader: async ({ params }) => {
+    try {
+      const res = await getPublicFlowServerFn({ data: { flowId: params.flowId } });
+      return { data: res, error: null };
+    } catch (err) {
+      return { data: null, error: (err as Error).message };
+    }
+  },
   component: EmbeddedFlow,
 });
 
@@ -33,10 +42,16 @@ function resolveValidatedParentOrigin(): string {
 
 function EmbeddedFlow() {
   const { flowId } = Route.useParams();
+  const loaderData = Route.useLoaderData();
   const ws = useWorkspace();
-  const flow = ws.flows.find(
-    (f) => f.id === flowId || f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === flowId,
-  );
+
+  const flow =
+    loaderData?.data?.flow ??
+    ws.flows.find(
+      (f) => f.id === flowId || f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === flowId,
+    );
+  const products = loaderData?.data?.products ?? ws.products;
+  const packages = loaderData?.data?.packages ?? ws.packages;
 
   const targetOrigin = useMemo(() => resolveValidatedParentOrigin(), []);
 
@@ -47,7 +62,7 @@ function EmbeddedFlow() {
       try {
         window.parent?.postMessage(
           { type: "quoteflow:resize", flowId, height: document.documentElement.scrollHeight },
-          "*",
+          targetOrigin || "*",
         );
       } catch {
         /* ignore cross-origin postMessage restriction */
@@ -57,7 +72,7 @@ function EmbeddedFlow() {
     const ro = new ResizeObserver(post);
     ro.observe(document.body);
     return () => ro.disconnect();
-  }, [flowId]);
+  }, [flowId, targetOrigin]);
 
   if (!flow) {
     return (
@@ -69,7 +84,13 @@ function EmbeddedFlow() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <FlowPreview flow={flow} record parentOrigin={targetOrigin} />
+      <FlowPreview
+        flow={flow}
+        products={products}
+        packages={packages}
+        record
+        parentOrigin={targetOrigin}
+      />
     </main>
   );
 }

@@ -20,6 +20,7 @@ import { Route as EnquiriesIndexRouteImport } from './routes/enquiries.index'
 import { Route as EnquiriesEnquiryIdRouteImport } from './routes/enquiries.$enquiryId'
 import { Route as FlowsIndexRouteImport } from './routes/flows.index'
 import { Route as FlowsFlowIdRouteImport } from './routes/flows.$flowId'
+import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ProposalsIndexRouteImport } from './routes/proposals.index'
 import { Route as ProposalsEnquiryIdRouteImport } from './routes/proposals.$enquiryId'
 
@@ -78,6 +79,11 @@ const FlowsFlowIdRoute = FlowsFlowIdRouteImport.update({
   path: '/flows/$flowId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PTokenRoute = PTokenRouteImport.update({
+  id: '/p/$token',
+  path: '/p/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProposalsIndexRoute = ProposalsIndexRouteImport.update({
   id: '/proposals/',
   path: '/proposals/',
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/embed/$flowId': typeof EmbedFlowIdRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
+  '/p/$token': typeof PTokenRoute
   '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
   '/enquiries/': typeof EnquiriesIndexRoute
   '/flows/': typeof FlowsIndexRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/embed/$flowId': typeof EmbedFlowIdRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
+  '/p/$token': typeof PTokenRoute
   '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
   '/enquiries': typeof EnquiriesIndexRoute
   '/flows': typeof FlowsIndexRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/embed/$flowId': typeof EmbedFlowIdRoute
   '/enquiries/$enquiryId': typeof EnquiriesEnquiryIdRoute
   '/flows/$flowId': typeof FlowsFlowIdRoute
+  '/p/$token': typeof PTokenRoute
   '/proposals/$enquiryId': typeof ProposalsEnquiryIdRoute
   '/enquiries/': typeof EnquiriesIndexRoute
   '/flows/': typeof FlowsIndexRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/embed/$flowId'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
+    | '/p/$token'
     | '/proposals/$enquiryId'
     | '/enquiries/'
     | '/flows/'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/embed/$flowId'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
+    | '/p/$token'
     | '/proposals/$enquiryId'
     | '/enquiries'
     | '/flows'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/embed/$flowId'
     | '/enquiries/$enquiryId'
     | '/flows/$flowId'
+    | '/p/$token'
     | '/proposals/$enquiryId'
     | '/enquiries/'
     | '/flows/'
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   EmbedFlowIdRoute: typeof EmbedFlowIdRoute
   EnquiriesEnquiryIdRoute: typeof EnquiriesEnquiryIdRoute
   FlowsFlowIdRoute: typeof FlowsFlowIdRoute
+  PTokenRoute: typeof PTokenRoute
   ProposalsEnquiryIdRoute: typeof ProposalsEnquiryIdRoute
   EnquiriesIndexRoute: typeof EnquiriesIndexRoute
   FlowsIndexRoute: typeof FlowsIndexRoute
@@ -278,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FlowsFlowIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$token': {
+      id: '/p/$token'
+      path: '/p/$token'
+      fullPath: '/p/$token'
+      preLoaderRoute: typeof PTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/proposals/': {
       id: '/proposals/'
       path: '/proposals'
@@ -305,6 +325,7 @@ const rootRouteChildren: RootRouteChildren = {
   EmbedFlowIdRoute: EmbedFlowIdRoute,
   EnquiriesEnquiryIdRoute: EnquiriesEnquiryIdRoute,
   FlowsFlowIdRoute: FlowsFlowIdRoute,
+  PTokenRoute: PTokenRoute,
   ProposalsEnquiryIdRoute: ProposalsEnquiryIdRoute,
   EnquiriesIndexRoute: EnquiriesIndexRoute,
   FlowsIndexRoute: FlowsIndexRoute,

@@ -148,6 +148,10 @@ export function migrateWorkspaceData(rawInput: unknown): WorkspaceData {
     : fallback.proposals;
   const proposals = rawProposals.map((p) => withProposalDefaults(p));
 
+  const proposalStatusHistory = Array.isArray((candidate as { proposalStatusHistory?: unknown }).proposalStatusHistory)
+    ? ((candidate as { proposalStatusHistory?: unknown }).proposalStatusHistory as WorkspaceData["proposalStatusHistory"])
+    : [];
+
   const settings = {
     ...defaultWorkspaceSettings(),
     ...((candidate.settings as WorkspaceData["settings"]) ?? {}),
@@ -160,6 +164,7 @@ export function migrateWorkspaceData(rawInput: unknown): WorkspaceData {
     packages,
     enquiries,
     proposals,
+    proposalStatusHistory,
     settings,
   };
 }

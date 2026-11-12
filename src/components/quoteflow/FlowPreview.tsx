@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type { Enquiry, Flow, FlowComponent, Product, Proposal } from "@/lib/quoteflow/types";
+import type { Enquiry, Flow, FlowComponent, Package, Product, Proposal } from "@/lib/quoteflow/types";
 import {
   createProposalSnapshot,
   createQuoteSnapshot,
@@ -11,6 +11,7 @@ import type { Answers } from "@/lib/quoteflow/engine";
 import { useActions, useWorkspace } from "@/lib/quoteflow/store";
 import { uid } from "@/lib/quoteflow/seed";
 import { sanitizeProductQuantities, validateFlowField } from "@/lib/quoteflow/form-builder-adapter";
+import { submitCustomerEnquiryServerFn } from "@/lib/quoteflow/server-fns";
 import { FormSurface } from "@devcode-tech/gamiflow-core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,8 @@ import { cn } from "@/lib/utils";
 
 export interface FlowPreviewProps {
   flow: Flow;
+  products?: Product[] | undefined;
+  packages?: Package[] | undefined;
   initialAnswers?: Answers | undefined;
   initialSelectedAddons?: string[] | undefined;
   initialSelectedProducts?: string[] | undefined;
@@ -35,6 +38,8 @@ export interface FlowPreviewProps {
 
 export function FlowPreview({
   flow,
+  products: customProducts,
+  packages: customPackages,
   initialAnswers,
   initialSelectedAddons,
   initialSelectedProducts,
@@ -45,6 +50,10 @@ export function FlowPreview({
 }: FlowPreviewProps) {
   const ws = useWorkspace();
   const { recordSubmission } = useActions();
+
+  const products = customProducts ?? ws.products;
+  const packages = customPackages ?? ws.packages;
+  const idempotencyKeyRef = useRef<string>(`idem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 
   // Retained draft answers across steps and visibility changes
   const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {});
@@ -222,7 +231,7 @@ export function FlowPreview({
     return Object.keys(contactErrors).length === 0;
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (isSubmittingRef.current || submitted) return;
     setSubmissionError(null);
 
@@ -309,6 +318,22 @@ export function FlowPreview({
             revision: 1,
           };
           createdProposal = newProposal;
+        }
+
+        // Server-authoritative submission to shared SQLite database
+        try {
+          await submitCustomerEnquiryServerFn({
+            data: {
+              flowId: flow.id,
+              answers: answerRecord,
+              selectedAddons: validAddonIds,
+              selectedProducts: effectiveSelectedProducts,
+              productQuantities: effectiveQuantities,
+              idempotencyKey: idempotencyKeyRef.current,
+            },
+          });
+        } catch (serverErr) {
+          console.warn("[QuoteFlow Submission] Server submission fallback:", serverErr);
         }
 
         // Atomic storage update: verifies localStorage write BEFORE committing in-memory state
