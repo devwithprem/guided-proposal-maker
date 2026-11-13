@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { AppShell, PageHeader } from "@/components/quoteflow/AppShell";
-import { resetWorkspace, useWorkspace } from "@/lib/quoteflow/store";
+import { resetWorkspace, useActions, useWorkspace } from "@/lib/quoteflow/store";
+import { defaultWorkspaceSettings } from "@/lib/quoteflow/defaults";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,15 +42,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function SettingsPage() {
   const ws = useWorkspace();
-  const [name, setName] = useState("Northside Events Co.");
-  const [currency, setCurrency] = useState("USD");
-  const [deposit, setDeposit] = useState("25");
-  const [validity, setValidity] = useState("14");
-  const [terms, setTerms] = useState(
-    "A 25% non-refundable deposit secures your date. Final balance is due 7 days before the event. Cancellations within 14 days are charged at 50%."
-  );
-  const [autoQuote, setAutoQuote] = useState(true);
-  const [notify, setNotify] = useState(true);
+  const { updateSettings } = useActions();
+  const s = ws.settings ?? defaultWorkspaceSettings();
 
   return (
     <AppShell>
@@ -58,13 +51,22 @@ function SettingsPage() {
       <div className="grid max-w-3xl gap-4 p-6">
         <Section title="Workspace" description="How your business appears on customer-facing flows and proposals.">
           <Field label="Business name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              value={s.businessName}
+              onChange={(e) => updateSettings({ businessName: e.target.value })}
+            />
           </Field>
           <Field label="Reply-to email">
-            <Input defaultValue="hello@northsideevents.com" />
+            <Input
+              value={s.replyToEmail}
+              onChange={(e) => updateSettings({ replyToEmail: e.target.value })}
+            />
           </Field>
           <Field label="Currency">
-            <Select value={currency} onValueChange={setCurrency}>
+            <Select
+              value={s.currency}
+              onValueChange={(c) => updateSettings({ currency: c as "USD" | "GBP" | "EUR" | "AUD" | "CAD" })}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -81,32 +83,50 @@ function SettingsPage() {
 
         <Section title="Quote defaults" description="Applied to every new flow unless overridden.">
           <Field label="Deposit (%)">
-            <Input type="number" value={deposit} onChange={(e) => setDeposit(e.target.value)} />
+            <Input
+              type="number"
+              value={s.depositPercent}
+              onChange={(e) => updateSettings({ depositPercent: Number(e.target.value) || 0 })}
+            />
           </Field>
           <Field label="Quote validity (days)">
-            <Input type="number" value={validity} onChange={(e) => setValidity(e.target.value)} />
+            <Input
+              type="number"
+              value={s.validityDays}
+              onChange={(e) => updateSettings({ validityDays: Number(e.target.value) || 14 })}
+            />
           </Field>
           <Field label="Auto-quote on submit">
             <div className="flex items-center gap-2">
-              <Switch checked={autoQuote} onCheckedChange={setAutoQuote} />
+              <Switch
+                checked={s.autoQuote}
+                onCheckedChange={(autoQuote) => updateSettings({ autoQuote })}
+              />
               <span className="text-[12.5px] text-muted-foreground">Run pricing logic the moment an enquiry arrives.</span>
             </div>
           </Field>
           <Field label="Email me new enquiries">
             <div className="flex items-center gap-2">
-              <Switch checked={notify} onCheckedChange={setNotify} />
+              <Switch
+                checked={s.notifyOnSubmit}
+                onCheckedChange={(notifyOnSubmit) => updateSettings({ notifyOnSubmit })}
+              />
               <span className="text-[12.5px] text-muted-foreground">Instant notification to your reply-to address.</span>
             </div>
           </Field>
         </Section>
 
         <Section title="Proposal terms" description="Shown at the bottom of every proposal you send.">
-          <Textarea rows={4} value={terms} onChange={(e) => setTerms(e.target.value)} />
+          <Textarea
+            rows={4}
+            value={s.terms}
+            onChange={(e) => updateSettings({ terms: e.target.value })}
+          />
         </Section>
 
         <Section
           title="Demo data"
-          description={`This prototype stores everything locally: ${ws.flows.length} flows, ${ws.products.length} products, ${ws.enquiries.length} enquiries.`}
+          description={`Shared server SQLite database: ${ws.flows.length} flows, ${ws.products.length} products, ${ws.enquiries.length} enquiries.`}
         >
           <Button variant="outline" size="sm" onClick={() => resetWorkspace()}>
             <RotateCcw className="mr-1 h-4 w-4" /> Reset to sample data

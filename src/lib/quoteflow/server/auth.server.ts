@@ -1,8 +1,129 @@
 import crypto from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 import { getCookie, setCookie, deleteCookie } from "@tanstack/react-start/server";
+import { getDb } from "./db.server";
 
 export const SESSION_COOKIE_NAME = "qf_admin_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
+
+export const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 mins
+export const RATE_LIMIT_MAX_ATTEMPTS = 5;
+export const GLOBAL_RATE_LIMIT_MAX = 25;
+export const RATE_LIMIT_LOCKOUT_MS = 15 * 60 * 1000; // 15 mins
+
+export function cleanupExpiredRateLimits(dbInstance?: DatabaseSync): void {
+  try {
+    const db = dbInstance ?? getDb();
+    const now = Date.now();
+    const threshold = now - RATE_LIMIT_WINDOW_MS;
+    const stmt = db.prepare(`
+      DELETE FROM auth_rate_limits
+      WHERE (locked_until IS NOT NULL AND locked_until < ?)
+         OR (locked_until IS NULL AND first_failed_at < ?)
+    `);
+    stmt.run(now, threshold);
+  } catch {
+    // ignore
+  }
+}
+
+export function checkLoginRateLimit(
+  scopeKey: string,
+  dbInstance?: DatabaseSync,
+): { allowed: boolean; retryAfterSeconds?: number | undefined } {
+  const db = dbInstance ?? getDb();
+  cleanupExpiredRateLimits(db);
+
+  const now = Date.now();
+  const stmt = db.prepare(
+    "SELECT scope_key, failed_count, first_failed_at, locked_until FROM auth_rate_limits WHERE scope_key IN (?, 'global_admin_login')",
+  );
+  const rows = stmt.all(scopeKey) as Array<{
+    scope_key: string;
+    failed_count: number;
+    first_failed_at: number;
+    locked_until: number | null;
+  }>;
+
+  for (const row of rows) {
+    if (row.locked_until && row.locked_until > now) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((row.locked_until - now) / 1000));
+      return { allowed: false, retryAfterSeconds };
+    }
+  }
+
+  return { allowed: true };
+}
+
+export function recordFailedLoginAttempt(
+  scopeKey: string,
+  dbInstance?: DatabaseSync,
+): { locked: boolean; failedCount: number; retryAfterSeconds?: number | undefined } {
+  const db = dbInstance ?? getDb();
+  const now = Date.now();
+
+  const recordForScope = (targetKey: string, maxAttempts: number) => {
+    const select = db.prepare(
+      "SELECT failed_count, first_failed_at, locked_until FROM auth_rate_limits WHERE scope_key = ?",
+    );
+    const row = select.get(targetKey) as
+      | { failed_count: number; first_failed_at: number; locked_until: number | null }
+      | undefined;
+
+    let newCount = 1;
+    let firstFailedAt = now;
+    let lockedUntil: number | null = null;
+
+    if (row) {
+      if (now - row.first_failed_at < RATE_LIMIT_WINDOW_MS) {
+        newCount = row.failed_count + 1;
+        firstFailedAt = row.first_failed_at;
+      } else {
+        newCount = 1;
+        firstFailedAt = now;
+      }
+    }
+
+    if (newCount >= maxAttempts) {
+      lockedUntil = now + RATE_LIMIT_LOCKOUT_MS;
+    }
+
+    const upsert = db.prepare(`
+      INSERT INTO auth_rate_limits (scope_key, failed_count, first_failed_at, locked_until)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(scope_key) DO UPDATE SET
+        failed_count = excluded.failed_count,
+        first_failed_at = excluded.first_failed_at,
+        locked_until = excluded.locked_until
+    `);
+    upsert.run(targetKey, newCount, firstFailedAt, lockedUntil);
+
+    return { locked: lockedUntil !== null, failedCount: newCount, lockedUntil };
+  };
+
+  const scopeRes = recordForScope(scopeKey, RATE_LIMIT_MAX_ATTEMPTS);
+  recordForScope("global_admin_login", GLOBAL_RATE_LIMIT_MAX);
+
+  const retryAfterSeconds = scopeRes.lockedUntil
+    ? Math.max(1, Math.ceil((scopeRes.lockedUntil - now) / 1000))
+    : undefined;
+  return {
+    locked: scopeRes.locked,
+    failedCount: scopeRes.failedCount,
+    retryAfterSeconds,
+  };
+}
+
+export function clearLoginRateLimit(scopeKey: string, dbInstance?: DatabaseSync): void {
+  try {
+    const db = dbInstance ?? getDb();
+    const stmt = db.prepare("DELETE FROM auth_rate_limits WHERE scope_key = ?");
+    stmt.run(scopeKey);
+  } catch {
+    // ignore
+  }
+}
+
 
 function getAdminPasscode(): string {
   const code = process.env["QUOTEFLOW_ADMIN_PASSCODE"];

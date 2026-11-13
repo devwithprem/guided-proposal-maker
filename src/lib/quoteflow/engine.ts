@@ -471,6 +471,7 @@ export interface RunEngineOptions {
   selectedProducts?: string[] | undefined;
   productQuantities?: Record<string, number> | undefined;
   quoteConfig?: EnquiryQuoteConfig | undefined;
+  enforceRecommendationEligibility?: boolean | undefined;
 }
 
 /**
@@ -488,6 +489,7 @@ export function runEngine(opts: RunEngineOptions): EngineResult {
     selectedProducts = [],
     productQuantities = {},
     quoteConfig,
+    enforceRecommendationEligibility = false,
   } = opts;
 
   const effectiveSelectedAddons = Array.from(
@@ -795,6 +797,7 @@ export function runEngine(opts: RunEngineOptions): EngineResult {
     for (const prodId of effectiveSelectedProducts) {
       if (ruleChargedProductIds.has(prodId) || chargedCustomerProductIds.has(prodId)) continue;
       if (removedProductIds.has(prodId)) continue;
+      if (enforceRecommendationEligibility && !recommendedIds.has(prodId)) continue;
 
       const p = products.find((prod) => prod.id === prodId && prod.active);
       if (!p) continue;
@@ -996,6 +999,7 @@ export function evaluateWorkingEnquiryQuote(
     selectedProducts: quoteConfig?.selectedProductIds ?? enquiry.selectedProducts,
     productQuantities: quoteConfig?.productQuantities,
     quoteConfig,
+    enforceRecommendationEligibility: false,
   });
 }
 

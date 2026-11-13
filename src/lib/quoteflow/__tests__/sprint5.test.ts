@@ -59,6 +59,7 @@ describe("Sprint 5: Shared Persistence, Server-Authoritative Quotes & Secure Pro
         contact_email: "tamper@example.com",
         guest_count: 200,
         event_type: "wedding",
+        outdoor: "outdoor",
       },
       selectedProducts: ["p_lighting"],
       productQuantities: { p_lighting: 2 },

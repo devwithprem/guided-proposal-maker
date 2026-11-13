@@ -32,9 +32,16 @@ import {
   adminLoginServerFn,
   adminLogoutServerFn,
   getAdminSessionServerFn,
-  importLegacyWorkspaceServerFn,
 } from "@/lib/quoteflow/server-fns";
-import { WORKSPACE_STORAGE_KEY } from "@/lib/quoteflow/migrations";
+import {
+  checkLegacyLocalData,
+  dismissLegacyLocalData,
+  importLegacyLocalData,
+  syncFromServer,
+  useSyncStatus,
+  type LegacyLocalDataSummary,
+} from "@/lib/quoteflow/store";
+import { RefreshCw, AlertTriangle } from "lucide-react";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -135,27 +142,43 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const [hasLocalData, setHasLocalData] = useState(false);
+  const { syncStatus, lastSyncError } = useSyncStatus();
+
+  const [legacyInfo, setLegacyInfo] = useState<{
+    hasLegacy: boolean;
+    summary: LegacyLocalDataSummary | null;
+  }>({ hasLegacy: false, summary: null });
+  const [overrideCatalog, setOverrideCatalog] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
-  const [migratedSuccess, setMigratedSuccess] = useState(false);
+  const [migratedSuccess, setMigratedSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     getAdminSessionServerFn()
       .then((res) => {
         setIsAuthenticated(res.authenticated);
+        if (res.authenticated) {
+          syncFromServer();
+        }
       })
       .catch(() => {
         setIsAuthenticated(false);
       });
 
-    if (typeof window !== "undefined") {
-      const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
-      const synced = window.localStorage.getItem("quoteflow.synced_to_server.v1");
-      if (raw && !synced) {
-        setHasLocalData(true);
-      }
+    const check = checkLegacyLocalData();
+    if (check.hasLegacy) {
+      setLegacyInfo({ hasLegacy: true, summary: check.summary });
     }
   }, []);
+
+  // Listen to window focus to keep server state fresh across browser tabs/devices
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const onFocus = () => {
+      syncFromServer();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [isAuthenticated]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,6 +192,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       const res = await adminLoginServerFn({ data: { passcode: passcode.trim() } });
       if (res.success) {
         setIsAuthenticated(true);
+        await syncFromServer();
       } else {
         setAuthError(res.error || "Incorrect passcode.");
       }
@@ -189,18 +213,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   const handleSyncLocalData = async () => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
-    if (!raw) return;
-
     setIsMigrating(true);
     try {
-      const parsed = JSON.parse(raw);
-      await importLegacyWorkspaceServerFn({ data: { legacyData: parsed } });
-      window.localStorage.setItem("quoteflow.synced_to_server.v1", "true");
-      setHasLocalData(false);
-      setMigratedSuccess(true);
-      setTimeout(() => setMigratedSuccess(false), 3000);
+      const res = await importLegacyLocalData({ overrideCatalog });
+      if (res.success) {
+        setLegacyInfo({ hasLegacy: false, summary: null });
+        const c = res.importedCounts;
+        const msg = c
+          ? `✓ Imported ${c.flows} flow(s), ${c.products} product(s), ${c.packages} package(s), ${c.enquiries} enquiry(s) into shared SQLite!`
+          : "✓ Workspace data successfully synced to the shared server database!";
+        setMigratedSuccess(msg);
+        setTimeout(() => setMigratedSuccess(null), 4000);
+      } else {
+        alert(`Migration error: ${res.error || "Unknown error"}`);
+      }
     } catch (err) {
       alert(`Migration error: ${(err as Error).message}`);
     } finally {
@@ -249,32 +275,63 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen bg-background text-foreground">
       <Sidebar onSignOut={handleSignOut} />
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Local storage migration notice */}
-        {hasLocalData && (
-          <div className="flex items-center justify-between border-b border-amber-500/30 bg-amber-50 px-6 py-2.5 text-[12.5px] text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+        {/* Sync Status / Error Banner */}
+        {syncStatus === "error" && lastSyncError && (
+          <div className="flex items-center justify-between border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-[12.5px] text-destructive">
             <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <AlertTriangle className="h-4 w-4" />
+              <span>{lastSyncError}</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[11px]"
+              onClick={() => syncFromServer()}
+            >
+              <RefreshCw className="mr-1 h-3 w-3" /> Retry Sync
+            </Button>
+          </div>
+        )}
+
+        {/* Local storage migration notice */}
+        {legacyInfo.hasLegacy && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-50 px-6 py-2.5 text-[12.5px] text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
               <span>
-                Local browser workspace data detected. Sync this browser&apos;s data to the shared server database?
+                Local browser data detected: Found{" "}
+                <strong>{legacyInfo.summary?.flowsCount ?? 0}</strong> flows,{" "}
+                <strong>{(legacyInfo.summary?.productsCount ?? 0) + (legacyInfo.summary?.packagesCount ?? 0)}</strong>{" "}
+                products/packages, and <strong>{legacyInfo.summary?.enquiriesCount ?? 0}</strong> enquiries in this
+                browser&apos;s local storage.
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-[11.5px] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={overrideCatalog}
+                  onChange={(e) => setOverrideCatalog(e.target.checked)}
+                  className="rounded border-amber-400"
+                />
+                Apply local catalog edits
+              </label>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-[12px]"
+                className="h-7 text-[12px] bg-amber-100 dark:bg-amber-900 border-amber-400"
                 disabled={isMigrating}
                 onClick={handleSyncLocalData}
               >
-                {isMigrating ? "Syncing…" : "Sync to Server"}
+                {isMigrating ? "Merging…" : "Review & Merge into Server"}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-7 text-[12px]"
                 onClick={() => {
-                  window.localStorage.setItem("quoteflow.synced_to_server.v1", "dismissed");
-                  setHasLocalData(false);
+                  dismissLegacyLocalData();
+                  setLegacyInfo({ hasLegacy: false, summary: null });
                 }}
               >
                 Dismiss
@@ -285,7 +342,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {migratedSuccess && (
           <div className="border-b border-emerald-500/30 bg-emerald-50 px-6 py-2 text-[12.5px] font-medium text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
-            ✓ Workspace data successfully synced to the shared server database!
+            {migratedSuccess}
           </div>
         )}
 
@@ -304,10 +361,23 @@ export function PageHeader({
   description?: string;
   actions?: ReactNode;
 }) {
+  const { syncStatus } = useSyncStatus();
+
   return (
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border bg-background px-6 py-5">
       <div>
-        <h1 className="text-[19px] font-semibold tracking-tight">{title}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-[19px] font-semibold tracking-tight">{title}</h1>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+            title="Refresh from server"
+            onClick={() => syncFromServer()}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", syncStatus === "syncing" && "animate-spin text-brand")} />
+          </Button>
+        </div>
         {description && <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}

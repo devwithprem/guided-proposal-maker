@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, PageHeader, StatusPill } from "@/components/quoteflow/AppShell";
 import { ProposalDocument, proposalTemplates } from "@/components/quoteflow/ProposalDocument";
-import { useActions, useWorkspace } from "@/lib/quoteflow/store";
+import { syncFromServer, useActions, useWorkspace } from "@/lib/quoteflow/store";
 import { evaluateEnquiryQuote } from "@/lib/quoteflow/engine";
 import type { EngineResult } from "@/lib/quoteflow/engine";
 import type { Package, ProposalTemplateId } from "@/lib/quoteflow/types";
@@ -103,6 +103,7 @@ function ProposalPage() {
       if (res?.shareUrl) {
         setIssuedUrl(res.shareUrl);
         upsertProposal(res.proposal);
+        syncFromServer();
       }
     } catch (err) {
       console.error("Failed to approve proposal:", err);

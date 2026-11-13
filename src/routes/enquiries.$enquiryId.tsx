@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, PageHeader, StatusPill } from "@/components/quoteflow/AppShell";
-import { useActions, useWorkspace } from "@/lib/quoteflow/store";
+import { syncFromServer, useActions, useWorkspace } from "@/lib/quoteflow/store";
 import {
   evaluateEnquiryQuote,
   evaluateWorkingEnquiryQuote,
@@ -123,14 +123,8 @@ function EnquiryDetail() {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err) {
-      console.warn("Server save fallback:", err);
-      upsertEnquiry({
-        ...enquiry,
-        quoteConfig: workingConfig,
-        notes,
-      });
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
+      console.error("Failed to save working quote configuration:", err);
+      alert((err as Error).message || "Failed to save working quote configuration");
     } finally {
       setIsSaving(false);
     }
@@ -154,6 +148,7 @@ function EnquiryDetail() {
           quoteConfig: workingConfig,
           notes,
         });
+        syncFromServer();
       }
     } catch (err) {
       console.error("Failed to approve and issue proposal:", err);

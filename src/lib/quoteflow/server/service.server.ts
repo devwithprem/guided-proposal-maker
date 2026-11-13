@@ -8,25 +8,33 @@ import {
   type EngineResult,
 } from "../engine";
 import {
+  backupWorkspace,
   generateSecureProposalToken,
   getIdempotencyRecord,
   getServerWorkspace,
+  getServerWorkspaceWithRevision,
   hashPublicToken,
   recordIdempotencyKey,
   recordProposalTokenMapping,
   updateServerWorkspace,
+  updateServerWorkspaceWithRevision,
 } from "./db.server";
 import { defaultWorkspaceSettings } from "../defaults";
 import { migrateWorkspaceData, validateWorkspacePayload } from "../migrations";
+import { seedData } from "../seed";
 import type {
   Enquiry,
   EnquiryQuoteConfig,
+  EnquiryStatus,
   Flow,
+  Package,
+  Product,
   Proposal,
   ProposalSnapshot,
   ProposalStatus,
   PublicProposalView,
   WorkspaceData,
+  WorkspaceSettings,
 } from "../types";
 
 export interface SubmitCustomerEnquiryPayload {
@@ -124,7 +132,52 @@ export function submitCustomerEnquiryAuthoritative(
     throw new Error(`Flow '${flow.name}' is currently ${flow.status} and cannot accept submissions.`);
   }
 
-  // 3. Server-side quote evaluation
+  // 3. Selection Eligibility Discovery & Strict Validation
+  const prelimResult = runEngine({
+    flow,
+    answers,
+    products: initialWs.products,
+    packages: initialWs.packages,
+    selectedAddons: [],
+    selectedProducts: [],
+    productQuantities: {},
+  });
+
+  const eligibleRecommendedProductIds = new Set(prelimResult.recommendedProducts.map((p) => p.id));
+  const basePackage = initialWs.packages.find((p) => p.id === flow.basePackageId);
+  const eligibleAddonIds = new Set(basePackage?.addons.map((a) => a.id) ?? []);
+
+  // Reject unauthorized/ineligible products
+  for (const prodId of selectedProducts) {
+    if (!eligibleRecommendedProductIds.has(prodId)) {
+      throw new Error(`Selected product '${prodId}' is not eligible for this quotation.`);
+    }
+  }
+
+  // Reject unauthorized/ineligible add-ons
+  for (const addonId of selectedAddons) {
+    if (!eligibleAddonIds.has(addonId)) {
+      throw new Error(`Selected add-on '${addonId}' is not eligible for base package.`);
+    }
+  }
+
+  // Validate quantities: must be finite integers in 1..9999
+  const ruleAddedProductIds = new Set(
+    prelimResult.lines.filter((l) => l.source === "rule_action").map((l) => l.targetId || l.id),
+  );
+  for (const [prodId, qty] of Object.entries(productQuantities)) {
+    const n = Number(qty);
+    if (!Number.isInteger(n) || n < 1 || n > 9999) {
+      throw new Error(
+        `Invalid quantity '${qty}' for product '${prodId}'. Must be an integer between 1 and 9999.`,
+      );
+    }
+    if (!eligibleRecommendedProductIds.has(prodId) && !ruleAddedProductIds.has(prodId)) {
+      throw new Error(`Quantity specified for unrecommended/ineligible product '${prodId}'.`);
+    }
+  }
+
+  // 4. Server-side quote evaluation with recommendation enforcement
   const engineResult = runEngine({
     flow,
     answers,
@@ -133,6 +186,7 @@ export function submitCustomerEnquiryAuthoritative(
     selectedAddons,
     selectedProducts,
     productQuantities,
+    enforceRecommendationEligibility: true,
   });
 
   if (!engineResult.converged) {
@@ -640,18 +694,395 @@ export function respondToPublicProposalAuthoritative(
 }
 
 /**
- * Migrates and imports a legacy localStorage workspace into the authoritative server SQLite store.
+ * Granular Admin Mutation Service Functions
+ */
+
+export function upsertProductAuthoritative(
+  product: Product,
+  workspaceId = "ws_default",
+  expectedRevision?: number,
+): { product: Product; workspaceRevision: number } {
+  if (!product.id || typeof product.id !== "string") {
+    throw new Error("Product ID is required.");
+  }
+  const name = (product.name || "").trim();
+  if (!name) {
+    throw new Error("Product name cannot be empty.");
+  }
+  if (!Number.isFinite(product.price) || product.price < 0) {
+    throw new Error("Product price must be a finite non-negative number.");
+  }
+
+  const sanitizedProduct: Product = {
+    ...product,
+    name,
+    sku: (product.sku || "").trim(),
+    description: (product.description || "").trim(),
+    price: Math.round(product.price * 100) / 100,
+    active: Boolean(product.active),
+  };
+
+  const res = updateServerWorkspaceWithRevision(
+    (current) => {
+      const exists = current.products.some((p) => p.id === sanitizedProduct.id);
+      const nextProducts = exists
+        ? current.products.map((p) => (p.id === sanitizedProduct.id ? sanitizedProduct : p))
+        : [sanitizedProduct, ...current.products];
+      return {
+        ...current,
+        products: nextProducts,
+      };
+    },
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+
+  return { product: sanitizedProduct, workspaceRevision: res.revision };
+}
+
+export function deleteProductAuthoritative(
+  productId: string,
+  workspaceId = "ws_default",
+  expectedRevision?: number,
+): { success: boolean; workspaceRevision: number } {
+  if (!productId || typeof productId !== "string") {
+    throw new Error("Product ID is required.");
+  }
+  const res = updateServerWorkspaceWithRevision(
+    (current) => ({
+      ...current,
+      products: current.products.filter((p) => p.id !== productId),
+    }),
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+  return { success: true, workspaceRevision: res.revision };
+}
+
+export function upsertPackageAuthoritative(
+  pkg: Package,
+  workspaceId = "ws_default",
+  expectedRevision?: number,
+): { package: Package; workspaceRevision: number } {
+  if (!pkg.id || typeof pkg.id !== "string") {
+    throw new Error("Package ID is required.");
+  }
+  const name = (pkg.name || "").trim();
+  if (!name) {
+    throw new Error("Package name cannot be empty.");
+  }
+  if (!Number.isFinite(pkg.price) || pkg.price < 0) {
+    throw new Error("Package price must be a finite non-negative number.");
+  }
+
+  const sanitizedPackage: Package = {
+    ...pkg,
+    name,
+    description: (pkg.description || "").trim(),
+    price: Math.round(pkg.price * 100) / 100,
+    includes: Array.isArray(pkg.includes) ? pkg.includes.map((i) => String(i).trim()) : [],
+    addons: Array.isArray(pkg.addons)
+      ? pkg.addons.map((a) => ({
+          ...a,
+          name: (a.name || "").trim(),
+          price: Math.round(Math.max(0, Number(a.price) || 0) * 100) / 100,
+        }))
+      : [],
+    archived: Boolean(pkg.archived),
+  };
+
+  const res = updateServerWorkspaceWithRevision(
+    (current) => {
+      const exists = current.packages.some((p) => p.id === sanitizedPackage.id);
+      const nextPackages = exists
+        ? current.packages.map((p) => (p.id === sanitizedPackage.id ? sanitizedPackage : p))
+        : [sanitizedPackage, ...current.packages];
+      return {
+        ...current,
+        packages: nextPackages,
+      };
+    },
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+
+  return { package: sanitizedPackage, workspaceRevision: res.revision };
+}
+
+export function deletePackageAuthoritative(
+  packageId: string,
+  workspaceId = "ws_default",
+  expectedRevision?: number,
+): { success: boolean; workspaceRevision: number } {
+  if (!packageId || typeof packageId !== "string") {
+    throw new Error("Package ID is required.");
+  }
+  const res = updateServerWorkspaceWithRevision(
+    (current) => ({
+      ...current,
+      packages: current.packages.filter((p) => p.id !== packageId),
+    }),
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+  return { success: true, workspaceRevision: res.revision };
+}
+
+export function upsertFlowAuthoritative(
+  flow: Flow,
+  workspaceId = "ws_default",
+  expectedRevision?: number,
+): { flow: Flow; workspaceRevision: number } {
+  if (!flow.id || typeof flow.id !== "string") {
+    throw new Error("Flow ID is required.");
+  }
+  const name = (flow.name || "").trim();
+  if (!name) {
+    throw new Error("Flow name cannot be empty.");
+  }
+
+  let updatedFlowResult: Flow = flow;
+
+  const res = updateServerWorkspaceWithRevision(
+    (current) => {
+      const existing = current.flows.find((f) => f.id === flow.id);
+      // Invariant: Server preserves the flow.submissions counter so admin edits don't reset customer analytics!
+      const serverSubmissions = existing?.submissions ?? flow.submissions ?? 0;
+      const now = new Date().toISOString().slice(0, 10);
+
+      const mergedFlow: Flow = {
+        ...flow,
+        name,
+        submissions: serverSubmissions,
+        updatedAt: now,
+      };
+      updatedFlowResult = mergedFlow;
+
+      const nextFlows = existing
+        ? current.flows.map((f) => (f.id === flow.id ? mergedFlow : f))
+        : [mergedFlow, ...current.flows];
+
+      return {
+        ...current,
+        flows: nextFlows,
+      };
+    },
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+
+  return { flow: updatedFlowResult, workspaceRevision: res.revision };
+}
+
+export function deleteFlowAuthoritative(
+  flowId: string,
+  workspaceId = "ws_default",
+  expectedRevision?: number,
+): { success: boolean; workspaceRevision: number } {
+  if (!flowId || typeof flowId !== "string") {
+    throw new Error("Flow ID is required.");
+  }
+  const res = updateServerWorkspaceWithRevision(
+    (current) => ({
+      ...current,
+      flows: current.flows.filter((f) => f.id !== flowId),
+    }),
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+  return { success: true, workspaceRevision: res.revision };
+}
+
+export function updateSettingsAuthoritative(
+  patch: Partial<WorkspaceSettings>,
+  workspaceId = "ws_default",
+  expectedRevision?: number,
+): { settings: WorkspaceSettings; workspaceRevision: number } {
+  let updatedSettings: WorkspaceSettings = defaultWorkspaceSettings();
+  const res = updateServerWorkspaceWithRevision(
+    (current) => {
+      updatedSettings = {
+        ...defaultWorkspaceSettings(),
+        ...(current.settings ?? {}),
+        ...patch,
+      };
+      return {
+        ...current,
+        settings: updatedSettings,
+      };
+    },
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+  return { settings: updatedSettings, workspaceRevision: res.revision };
+}
+
+export function updateEnquiryMetaAuthoritative(
+  params: { enquiryId: string; status?: EnquiryStatus | undefined; notes?: string | undefined },
+  workspaceId = "ws_default",
+  expectedRevision?: number | undefined,
+): { enquiry: Enquiry; workspaceRevision: number } {
+  let targetEnquiry: Enquiry | undefined;
+  const res = updateServerWorkspaceWithRevision(
+    (current) => {
+      const existing = current.enquiries.find((e) => e.id === params.enquiryId);
+      if (!existing) {
+        throw new Error(`Enquiry '${params.enquiryId}' not found.`);
+      }
+      const updated: Enquiry = {
+        ...existing,
+        status: params.status ?? existing.status,
+        notes: params.notes !== undefined ? params.notes : existing.notes,
+      };
+      targetEnquiry = updated;
+      return {
+        ...current,
+        enquiries: current.enquiries.map((e) => (e.id === params.enquiryId ? updated : e)),
+      };
+    },
+    workspaceId,
+    undefined,
+    expectedRevision,
+  );
+  if (!targetEnquiry) {
+    throw new Error(`Enquiry '${params.enquiryId}' not found.`);
+  }
+  return { enquiry: targetEnquiry, workspaceRevision: res.revision };
+}
+
+export function resetServerWorkspaceAuthoritative(
+  workspaceId = "ws_default",
+): { workspace: WorkspaceData; backupId: string; workspaceRevision: number } {
+  const backupId = backupWorkspace("pre_reset", workspaceId);
+  const fresh = migrateWorkspaceData(seedData());
+  const res = updateServerWorkspaceWithRevision(() => fresh, workspaceId);
+  return { workspace: fresh, backupId, workspaceRevision: res.revision };
+}
+
+/**
+ * Non-destructively migrates and imports a legacy localStorage workspace into the authoritative server SQLite store.
+ * Backs up existing server workspace before merge. Server strictly wins on existing enquiry and proposal records.
  */
 export function importLegacyWorkspaceAuthoritative(
   legacyData: unknown,
+  options?: { overrideCatalog?: boolean | undefined } | undefined,
   workspaceId = "ws_default",
-): WorkspaceData {
+): {
+  workspace: WorkspaceData;
+  backupId: string;
+  workspaceRevision: number;
+  importedCounts: { flows: number; products: number; packages: number; enquiries: number };
+} {
   const validation = validateWorkspacePayload(legacyData);
   if (!validation.valid) {
     throw new Error(`Invalid legacy workspace payload: ${validation.reason}`);
   }
 
-  const migrated = migrateWorkspaceData(legacyData);
+  const legacy = migrateWorkspaceData(legacyData);
+  const backupId = backupWorkspace("pre_legacy_import", workspaceId);
 
-  return updateServerWorkspace(() => migrated, workspaceId);
+  const counts = { flows: 0, products: 0, packages: 0, enquiries: 0 };
+  const overrideCatalog = Boolean(options?.overrideCatalog);
+
+  const res = updateServerWorkspaceWithRevision(
+    (current) => {
+      // 1. Enquiries: Server strictly wins on existing enquiry IDs!
+      const serverEnquiryIds = new Set(current.enquiries.map((e) => e.id));
+      const newEnquiries = legacy.enquiries.filter((e) => !serverEnquiryIds.has(e.id));
+      counts.enquiries = newEnquiries.length;
+      const mergedEnquiries = [...current.enquiries, ...newEnquiries];
+
+      // 2. Proposals: Server strictly wins on existing proposal IDs!
+      const serverProposalIds = new Set(current.proposals.map((p) => p.id));
+      const newProposals = legacy.proposals.filter((p) => !serverProposalIds.has(p.id));
+      const mergedProposals = [...current.proposals, ...newProposals];
+
+      // 3. Status History
+      const serverStatusHistoryIds = new Set((current.proposalStatusHistory ?? []).map((h) => h.id));
+      const newStatusHistory = (legacy.proposalStatusHistory ?? []).filter(
+        (h) => !serverStatusHistoryIds.has(h.id),
+      );
+      const mergedStatusHistory = [...(current.proposalStatusHistory ?? []), ...newStatusHistory];
+
+      // 4. Products
+      const serverProductMap = new Map(current.products.map((p) => [p.id, p]));
+      const finalProducts = [...current.products];
+      for (const lp of legacy.products) {
+        const existing = serverProductMap.get(lp.id);
+        if (!existing) {
+          finalProducts.push(lp);
+          counts.products++;
+        } else if (overrideCatalog) {
+          const idx = finalProducts.findIndex((p) => p.id === lp.id);
+          if (idx !== -1) finalProducts[idx] = lp;
+        }
+      }
+
+      // 5. Packages
+      const serverPackageMap = new Map(current.packages.map((p) => [p.id, p]));
+      const finalPackages = [...current.packages];
+      for (const lpk of legacy.packages) {
+        const existing = serverPackageMap.get(lpk.id);
+        if (!existing) {
+          finalPackages.push(lpk);
+          counts.packages++;
+        } else if (overrideCatalog) {
+          const idx = finalPackages.findIndex((p) => p.id === lpk.id);
+          if (idx !== -1) finalPackages[idx] = lpk;
+        }
+      }
+
+      // 6. Flows: Preserve server-side flow.submissions!
+      const serverFlowMap = new Map(current.flows.map((f) => [f.id, f]));
+      const finalFlows = [...current.flows];
+      for (const lf of legacy.flows) {
+        const existing = serverFlowMap.get(lf.id);
+        if (!existing) {
+          finalFlows.push(lf);
+          counts.flows++;
+        } else if (overrideCatalog) {
+          const idx = finalFlows.findIndex((f) => f.id === lf.id);
+          if (idx !== -1) {
+            finalFlows[idx] = {
+              ...lf,
+              submissions: existing.submissions, // Invariant: retain server submission count
+            };
+          }
+        }
+      }
+
+      // 7. Settings
+      const mergedSettings = {
+        ...defaultWorkspaceSettings(),
+        ...(current.settings ?? {}),
+        ...(legacy.settings ?? {}),
+      };
+
+      return {
+        ...current,
+        products: finalProducts,
+        packages: finalPackages,
+        flows: finalFlows,
+        enquiries: mergedEnquiries,
+        proposals: mergedProposals,
+        proposalStatusHistory: mergedStatusHistory,
+        settings: mergedSettings,
+      };
+    },
+    workspaceId,
+  );
+
+  return {
+    workspace: res.workspace,
+    backupId,
+    workspaceRevision: res.revision,
+    importedCounts: counts,
+  };
 }

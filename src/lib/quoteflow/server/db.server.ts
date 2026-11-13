@@ -37,12 +37,15 @@ export function getDb(customPath?: string): DatabaseSync {
   const db = new DatabaseSync(targetPath);
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
+  db.exec("PRAGMA busy_timeout = 5000;");
+  db.exec("PRAGMA synchronous = NORMAL;");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS workspaces (
       id TEXT PRIMARY KEY,
       data TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS idempotency_keys (
@@ -60,7 +63,33 @@ export function getDb(customPath?: string): DatabaseSync {
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS auth_rate_limits (
+      scope_key TEXT PRIMARY KEY,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      first_failed_at INTEGER NOT NULL,
+      locked_until INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS workspace_backups (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
+
+  // Ensure 'revision' column exists on legacy workspaces table if created in Sprint 5
+  try {
+    const cols = db.prepare("PRAGMA table_info(workspaces)").all() as Array<{ name: string }>;
+    const hasRevision = cols.some((c) => c.name === "revision");
+    if (!hasRevision) {
+      db.exec("ALTER TABLE workspaces ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;");
+    }
+  } catch {
+    // ignore
+  }
 
   activeDbInstance = db;
   activeDbPath = targetPath;
@@ -89,22 +118,48 @@ export function generateSecureProposalToken(): { rawToken: string; tokenHash: st
   return { rawToken, tokenHash };
 }
 
-export function getServerWorkspace(workspaceId = "ws_default", dbInstance?: DatabaseSync): WorkspaceData {
+export function backupWorkspace(
+  reason: string,
+  workspaceId = "ws_default",
+  dbInstance?: DatabaseSync,
+): string {
   const db = dbInstance ?? getDb();
   const stmt = db.prepare("SELECT data FROM workspaces WHERE id = ?");
   const row = stmt.get(workspaceId) as { data: string } | undefined;
+  if (!row) return "";
+  const backupId = `bk_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+  const now = new Date().toISOString();
+  const insert = db.prepare(
+    "INSERT INTO workspace_backups (id, workspace_id, reason, data, created_at) VALUES (?, ?, ?, ?, ?)",
+  );
+  insert.run(backupId, workspaceId, reason, row.data, now);
+  return backupId;
+}
+
+export function getServerWorkspaceWithRevision(
+  workspaceId = "ws_default",
+  dbInstance?: DatabaseSync,
+): { workspace: WorkspaceData; revision: number } {
+  const db = dbInstance ?? getDb();
+  const stmt = db.prepare("SELECT data, revision FROM workspaces WHERE id = ?");
+  const row = stmt.get(workspaceId) as { data: string; revision: number | null } | undefined;
 
   if (!row) {
     const initial = migrateWorkspaceData(seedData());
     const now = new Date().toISOString();
-    const insert = db.prepare("INSERT INTO workspaces (id, data, updated_at) VALUES (?, ?, ?)");
+    const insert = db.prepare(
+      "INSERT INTO workspaces (id, data, updated_at, revision) VALUES (?, ?, ?, 1)",
+    );
     insert.run(workspaceId, JSON.stringify(initial), now);
-    return initial;
+    return { workspace: initial, revision: 1 };
   }
 
   try {
     const parsed = JSON.parse(row.data);
-    return migrateWorkspaceData(parsed);
+    return {
+      workspace: migrateWorkspaceData(parsed),
+      revision: typeof row.revision === "number" ? row.revision : 1,
+    };
   } catch (err) {
     throw new Error(
       `[QuoteFlow Server] Corrupted workspace data in SQLite for '${workspaceId}': ${(err as Error).message}`,
@@ -112,17 +167,29 @@ export function getServerWorkspace(workspaceId = "ws_default", dbInstance?: Data
   }
 }
 
-export function updateServerWorkspace(
+export function getServerWorkspace(workspaceId = "ws_default", dbInstance?: DatabaseSync): WorkspaceData {
+  return getServerWorkspaceWithRevision(workspaceId, dbInstance).workspace;
+}
+
+export function updateServerWorkspaceWithRevision(
   updater: (current: WorkspaceData) => WorkspaceData,
   workspaceId = "ws_default",
   dbInstance?: DatabaseSync,
-): WorkspaceData {
+  expectedRevision?: number,
+): { workspace: WorkspaceData; revision: number } {
   const db = dbInstance ?? getDb();
 
   db.exec("BEGIN IMMEDIATE");
   try {
-    const stmt = db.prepare("SELECT data FROM workspaces WHERE id = ?");
-    const row = stmt.get(workspaceId) as { data: string } | undefined;
+    const stmt = db.prepare("SELECT data, revision FROM workspaces WHERE id = ?");
+    const row = stmt.get(workspaceId) as { data: string; revision: number | null } | undefined;
+
+    const currentRevision = typeof row?.revision === "number" ? row.revision : 1;
+    if (expectedRevision !== undefined && row && currentRevision !== expectedRevision) {
+      throw new Error(
+        `[QuoteFlow Server] Concurrency conflict: Workspace was modified by another session (expected revision ${expectedRevision}, current server revision is ${currentRevision}). Please refresh.`,
+      );
+    }
 
     let current: WorkspaceData;
     if (!row) {
@@ -133,20 +200,37 @@ export function updateServerWorkspace(
 
     const updated = updater(current);
     const now = new Date().toISOString();
+    const nextRevision = currentRevision + 1;
 
     const upsert = db.prepare(`
-      INSERT INTO workspaces (id, data, updated_at)
-      VALUES (?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+      INSERT INTO workspaces (id, data, updated_at, revision)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        data = excluded.data,
+        updated_at = excluded.updated_at,
+        revision = excluded.revision
     `);
-    upsert.run(workspaceId, JSON.stringify(updated), now);
+    upsert.run(workspaceId, JSON.stringify(updated), now, nextRevision);
 
     db.exec("COMMIT");
-    return updated;
+    return { workspace: updated, revision: nextRevision };
   } catch (err) {
-    db.exec("ROLLBACK");
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // ignore
+    }
     throw err;
   }
+}
+
+export function updateServerWorkspace(
+  updater: (current: WorkspaceData) => WorkspaceData,
+  workspaceId = "ws_default",
+  dbInstance?: DatabaseSync,
+  expectedRevision?: number,
+): WorkspaceData {
+  return updateServerWorkspaceWithRevision(updater, workspaceId, dbInstance, expectedRevision).workspace;
 }
 
 export function getIdempotencyRecord(

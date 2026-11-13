@@ -2,24 +2,45 @@ import { createServerFn } from "@tanstack/react-start";
 import { getCookie } from "@tanstack/react-start/server";
 import {
   approveAndIssueProposalAuthoritative,
+  deleteFlowAuthoritative,
+  deletePackageAuthoritative,
+  deleteProductAuthoritative,
   getPublicFlowAuthoritative,
   getPublicProposalByTokenAuthoritative,
   importLegacyWorkspaceAuthoritative,
+  resetServerWorkspaceAuthoritative,
   respondToPublicProposalAuthoritative,
   submitCustomerEnquiryAuthoritative,
+  updateEnquiryMetaAuthoritative,
   updateEnquiryWorkingQuoteAuthoritative,
+  updateSettingsAuthoritative,
+  upsertFlowAuthoritative,
+  upsertPackageAuthoritative,
+  upsertProductAuthoritative,
   type SubmitCustomerEnquiryPayload,
 } from "./server/service.server";
-import { getServerWorkspace } from "./server/db.server";
+import { getServerWorkspaceWithRevision } from "./server/db.server";
 import {
+  checkLoginRateLimit,
   clearAdminSessionCookie,
+  clearLoginRateLimit,
+  recordFailedLoginAttempt,
   requireAdminSession,
   setAdminSessionCookie,
   verifyAdminPasscode,
   verifyAdminSessionToken,
   SESSION_COOKIE_NAME,
 } from "./server/auth.server";
-import type { EnquiryQuoteConfig, Flow, Package, Product, PublicProposalView, WorkspaceData } from "./types";
+import type {
+  EnquiryQuoteConfig,
+  EnquiryStatus,
+  Flow,
+  Package,
+  Product,
+  PublicProposalView,
+  WorkspaceData,
+  WorkspaceSettings,
+} from "./types";
 
 // ==========================================
 // PUBLIC CUSTOMER ENDPOINTS
@@ -93,10 +114,41 @@ export const getAdminSessionServerFn = createServerFn({ method: "GET" }).handler
 export const adminLoginServerFn = createServerFn({ method: "POST" })
   .validator((d: { passcode: string }) => d)
   .handler(async ({ data }) => {
+    let clientIp = "127.0.0.1";
+    try {
+      const { getRequestIP } = await import("@tanstack/react-start/server");
+      clientIp = getRequestIP() || "127.0.0.1";
+    } catch {
+      // test environment fallback
+    }
+    const scopeKey = `ip:${clientIp}`;
+    const rateLimit = checkLoginRateLimit(scopeKey);
+    if (!rateLimit.allowed) {
+      const mins = Math.max(1, Math.ceil((rateLimit.retryAfterSeconds ?? 60) / 60));
+      return {
+        success: false,
+        error: `Too many failed login attempts. Please try again in ${mins} minute${mins > 1 ? "s" : ""}.`,
+        locked: true,
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      };
+    }
+
     const valid = verifyAdminPasscode(data.passcode);
     if (!valid) {
+      const failed = recordFailedLoginAttempt(scopeKey);
+      if (failed.locked) {
+        const mins = Math.max(1, Math.ceil((failed.retryAfterSeconds ?? 60) / 60));
+        return {
+          success: false,
+          error: `Too many failed login attempts. Account locked for ${mins} minute${mins > 1 ? "s" : ""}.`,
+          locked: true,
+          retryAfterSeconds: failed.retryAfterSeconds,
+        };
+      }
       return { success: false, error: "Incorrect administrator passcode." };
     }
+
+    clearLoginRateLimit(scopeKey);
     const { createAdminSessionToken } = await import("./server/auth.server");
     const token = createAdminSessionToken();
     setAdminSessionCookie(token);
@@ -113,18 +165,96 @@ export const adminLogoutServerFn = createServerFn({ method: "POST" }).handler(as
 // ==========================================
 
 export const getWorkspaceServerFn = createServerFn({ method: "GET" }).handler(
-  async (): Promise<WorkspaceData> => {
+  async (): Promise<{ workspace: WorkspaceData; revision: number }> => {
     requireAdminSession();
-    return getServerWorkspace();
+    return getServerWorkspaceWithRevision();
   },
 );
 
-export const importLegacyWorkspaceServerFn = createServerFn({ method: "POST" })
-  .validator((d: { legacyData: unknown }) => d)
-  .handler(async ({ data }): Promise<{ success: boolean; workspace: WorkspaceData }> => {
+export const upsertProductServerFn = createServerFn({ method: "POST" })
+  .validator((d: { product: Product; expectedRevision?: number | undefined }) => d)
+  .handler(async ({ data }) => {
     requireAdminSession();
-    const updated = importLegacyWorkspaceAuthoritative(data.legacyData);
-    return { success: true, workspace: updated };
+    return upsertProductAuthoritative(data.product, "ws_default", data.expectedRevision);
+  });
+
+export const deleteProductServerFn = createServerFn({ method: "POST" })
+  .validator((d: { productId: string; expectedRevision?: number | undefined }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return deleteProductAuthoritative(data.productId, "ws_default", data.expectedRevision);
+  });
+
+export const upsertPackageServerFn = createServerFn({ method: "POST" })
+  .validator((d: { pkg: Package; expectedRevision?: number | undefined }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return upsertPackageAuthoritative(data.pkg, "ws_default", data.expectedRevision);
+  });
+
+export const deletePackageServerFn = createServerFn({ method: "POST" })
+  .validator((d: { packageId: string; expectedRevision?: number | undefined }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return deletePackageAuthoritative(data.packageId, "ws_default", data.expectedRevision);
+  });
+
+export const upsertFlowServerFn = createServerFn({ method: "POST" })
+  .validator((d: { flow: Flow; expectedRevision?: number | undefined }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return upsertFlowAuthoritative(data.flow, "ws_default", data.expectedRevision);
+  });
+
+export const deleteFlowServerFn = createServerFn({ method: "POST" })
+  .validator((d: { flowId: string; expectedRevision?: number | undefined }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return deleteFlowAuthoritative(data.flowId, "ws_default", data.expectedRevision);
+  });
+
+export const updateSettingsServerFn = createServerFn({ method: "POST" })
+  .validator((d: { settings: Partial<WorkspaceSettings>; expectedRevision?: number | undefined }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return updateSettingsAuthoritative(data.settings, "ws_default", data.expectedRevision);
+  });
+
+export const updateEnquiryMetaServerFn = createServerFn({ method: "POST" })
+  .validator(
+    (d: {
+      enquiryId: string;
+      status?: EnquiryStatus | undefined;
+      notes?: string | undefined;
+      expectedRevision?: number | undefined;
+    }) => d,
+  )
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return updateEnquiryMetaAuthoritative(
+      { enquiryId: data.enquiryId, status: data.status, notes: data.notes },
+      "ws_default",
+      data.expectedRevision,
+    );
+  });
+
+export const resetServerWorkspaceServerFn = createServerFn({ method: "POST" })
+  .validator((d: { confirm: boolean }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    if (!data.confirm) {
+      throw new Error("Explicit confirmation required to reset workspace.");
+    }
+    return resetServerWorkspaceAuthoritative();
+  });
+
+export const importLegacyWorkspaceServerFn = createServerFn({ method: "POST" })
+  .validator((d: { legacyData: unknown; overrideCatalog?: boolean | undefined }) => d)
+  .handler(async ({ data }) => {
+    requireAdminSession();
+    return importLegacyWorkspaceAuthoritative(data.legacyData, {
+      overrideCatalog: data.overrideCatalog,
+    });
   });
 
 export const saveEnquiryQuoteConfigServerFn = createServerFn({ method: "POST" })
