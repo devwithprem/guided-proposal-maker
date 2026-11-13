@@ -24,6 +24,7 @@ import {
   checkLoginRateLimit,
   clearAdminSessionCookie,
   clearLoginRateLimit,
+  isAuthConfigured,
   recordFailedLoginAttempt,
   requireAdminSession,
   setAdminSessionCookie,
@@ -130,6 +131,14 @@ export const adminLoginServerFn = createServerFn({ method: "POST" })
         error: `Too many failed login attempts. Please try again in ${mins} minute${mins > 1 ? "s" : ""}.`,
         locked: true,
         retryAfterSeconds: rateLimit.retryAfterSeconds,
+      };
+    }
+
+    if (!isAuthConfigured()) {
+      return {
+        success: false,
+        error:
+          "Authentication is not configured on this server. Please define QUOTEFLOW_ADMIN_PASSCODE and QUOTEFLOW_SESSION_SECRET in .env.local and restart the server.",
       };
     }
 

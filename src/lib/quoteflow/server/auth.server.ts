@@ -125,7 +125,35 @@ export function clearLoginRateLimit(scopeKey: string, dbInstance?: DatabaseSync)
 }
 
 
+export function loadEnvFiles(): void {
+  // If already set in process.env, nothing to do
+  if (process.env["QUOTEFLOW_ADMIN_PASSCODE"] && process.env["QUOTEFLOW_SESSION_SECRET"]) {
+    return;
+  }
+  // Try loading via Node's native process.loadEnvFile if available
+  if (typeof process.loadEnvFile === "function") {
+    try {
+      process.loadEnvFile(".env.local");
+    } catch {
+      // ignore
+    }
+    try {
+      process.loadEnvFile(".env");
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function isAuthConfigured(): boolean {
+  loadEnvFiles();
+  const code = process.env["QUOTEFLOW_ADMIN_PASSCODE"];
+  const secret = process.env["QUOTEFLOW_SESSION_SECRET"];
+  return Boolean(code && code.trim().length > 0 && secret && secret.trim().length > 0);
+}
+
 function getAdminPasscode(): string {
+  loadEnvFiles();
   const code = process.env["QUOTEFLOW_ADMIN_PASSCODE"];
   if (code && code.trim().length > 0) {
     return code.trim();
@@ -135,10 +163,11 @@ function getAdminPasscode(): string {
       "[QuoteFlow Auth] QUOTEFLOW_ADMIN_PASSCODE environment variable must be set in production.",
     );
   }
-  return "admin123";
+  return "";
 }
 
 function getSessionSecret(): string {
+  loadEnvFiles();
   const secret = process.env["QUOTEFLOW_SESSION_SECRET"];
   if (secret && secret.trim().length > 0) {
     return secret.trim();
@@ -148,17 +177,23 @@ function getSessionSecret(): string {
       "[QuoteFlow Auth] QUOTEFLOW_SESSION_SECRET environment variable must be set in production.",
     );
   }
-  return "quoteflow-dev-secret-do-not-use-in-production";
+  return "";
 }
 
 function signSession(data: string): string {
   const secret = getSessionSecret();
+  if (!secret) {
+    throw new Error(
+      "[QuoteFlow Auth] QUOTEFLOW_SESSION_SECRET environment variable is not configured.",
+    );
+  }
   return crypto.createHmac("sha256", secret).update(data).digest("hex");
 }
 
 export function verifyAdminPasscode(passcode: string): boolean {
   if (!passcode || typeof passcode !== "string") return false;
   const expected = getAdminPasscode();
+  if (!expected) return false;
   const bufA = Buffer.from(passcode.trim());
   const bufB = Buffer.from(expected);
   if (bufA.length !== bufB.length) return false;

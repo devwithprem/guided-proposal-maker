@@ -234,6 +234,20 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   };
 
+  // Loading state while checking administrator session
+  if (isAuthenticated === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="flex items-center gap-2.5 text-sm font-medium text-muted-foreground">
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-brand text-brand-foreground text-[13px] font-bold">
+            Q
+          </span>
+          <span>Loading QuoteFlow workspace…</span>
+        </div>
+      </div>
+    );
+  }
+
   // Auth gate check
   if (isAuthenticated === false) {
     return (

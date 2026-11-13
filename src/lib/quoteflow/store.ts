@@ -38,9 +38,31 @@ let state: WorkspaceData = migrateWorkspaceData(seedData());
 let hydrated = false;
 let serverRevision = 1;
 let lastConfirmedServerSnapshot: WorkspaceData | null = null;
-let syncStatus: "idle" | "syncing" | "error" = "idle";
-let lastSyncError: string | null = null;
+
+export interface SyncStatusSnapshot {
+  syncStatus: "idle" | "syncing" | "error";
+  lastSyncError: string | null;
+}
+
+const SERVER_SYNC_STATUS_SNAPSHOT: SyncStatusSnapshot = Object.freeze({
+  syncStatus: "idle",
+  lastSyncError: null,
+});
+
+let syncStatusSnapshot: SyncStatusSnapshot = {
+  syncStatus: "idle",
+  lastSyncError: null,
+};
+
 const listeners = new Set<() => void>();
+
+export function setSyncStatus(status: "idle" | "syncing" | "error", error: string | null = null): void {
+  if (syncStatusSnapshot.syncStatus === status && syncStatusSnapshot.lastSyncError === error) {
+    return;
+  }
+  syncStatusSnapshot = { syncStatus: status, lastSyncError: error };
+  emit();
+}
 
 const debouncedTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -98,11 +120,13 @@ function hydrate() {
   }
 }
 
-function subscribe(cb: () => void) {
+export function subscribe(cb: () => void) {
   hydrate();
   listeners.add(cb);
   return () => listeners.delete(cb);
 }
+
+export const storeSubscribe = subscribe;
 
 export const getSnapshot = () => {
   hydrate();
@@ -117,8 +141,12 @@ export function getServerRevision(): number {
   return serverRevision;
 }
 
-export function getSyncStatus(): { syncStatus: "idle" | "syncing" | "error"; lastSyncError: string | null } {
-  return { syncStatus, lastSyncError };
+export function getSyncStatus(): SyncStatusSnapshot {
+  return syncStatusSnapshot;
+}
+
+export function getServerSyncStatusSnapshot(): SyncStatusSnapshot {
+  return SERVER_SYNC_STATUS_SNAPSHOT;
 }
 
 export function setState(updater: (s: WorkspaceData) => WorkspaceData) {
@@ -131,11 +159,11 @@ export function useWorkspace() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-export function useSyncStatus() {
+export function useSyncStatus(): SyncStatusSnapshot {
   return useSyncExternalStore(
     subscribe,
     getSyncStatus,
-    () => ({ syncStatus: "idle" as const, lastSyncError: null }),
+    getServerSyncStatusSnapshot,
   );
 }
 
@@ -145,22 +173,18 @@ export function useSyncStatus() {
 export async function syncFromServer(options?: { force?: boolean }): Promise<WorkspaceData | null> {
   if (typeof window === "undefined") return null;
 
-  syncStatus = "syncing";
-  emit();
+  setSyncStatus("syncing", null);
 
   try {
     const res = await getWorkspaceServerFn();
     state = res.workspace;
     serverRevision = res.revision;
     lastConfirmedServerSnapshot = res.workspace;
-    syncStatus = "idle";
-    lastSyncError = null;
+    setSyncStatus("idle", null);
     emit();
     return res.workspace;
   } catch (err) {
-    syncStatus = "error";
-    lastSyncError = (err as Error).message || "Failed to load workspace from server.";
-    emit();
+    setSyncStatus("error", (err as Error).message || "Failed to load workspace from server.");
     return null;
   }
 }
@@ -224,8 +248,7 @@ export async function importLegacyLocalData(options?: { overrideCatalog?: boolea
     state = res.workspace;
     serverRevision = res.workspaceRevision;
     lastConfirmedServerSnapshot = res.workspace;
-    syncStatus = "idle";
-    lastSyncError = null;
+    setSyncStatus("idle", null);
     emit();
 
     return { success: true, importedCounts: res.importedCounts };
@@ -257,17 +280,16 @@ export function resetWorkspace() {
         state = res.workspace;
         serverRevision = res.workspaceRevision;
         lastConfirmedServerSnapshot = res.workspace;
-        syncStatus = "idle";
+        setSyncStatus("idle", null);
         emit();
       })
       .catch((err) => {
-        syncStatus = "error";
-        lastSyncError = (err as Error).message;
-        emit();
+        setSyncStatus("error", (err as Error).message);
       });
   }
 
   state = migrateWorkspaceData(seedData());
+  setSyncStatus("idle", null);
   emit();
 }
 
@@ -358,22 +380,18 @@ export function useActions() {
       if (typeof window !== "undefined") {
         debounceMutation(`flow_${flow.id}`, 250, async () => {
           try {
-            syncStatus = "syncing";
-            emit();
+            setSyncStatus("syncing", null);
             const res = await upsertFlowServerFn({
               data: { flow, expectedRevision: serverRevision },
             });
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           } catch (err) {
             // Rollback on conflict or failure
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message || "Failed to save flow to server.";
-            emit();
+            setSyncStatus("error", (err as Error).message || "Failed to save flow to server.");
           }
         });
       }
@@ -388,15 +406,12 @@ export function useActions() {
           .then((res) => {
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           })
           .catch((err) => {
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message;
-            emit();
+            setSyncStatus("error", (err as Error).message);
           });
       }
     }, []),
@@ -413,21 +428,17 @@ export function useActions() {
       if (typeof window !== "undefined") {
         debounceMutation(`prod_${p.id}`, 250, async () => {
           try {
-            syncStatus = "syncing";
-            emit();
+            setSyncStatus("syncing", null);
             const res = await upsertProductServerFn({
               data: { product: p, expectedRevision: serverRevision },
             });
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           } catch (err) {
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message || "Failed to save product to server.";
-            emit();
+            setSyncStatus("error", (err as Error).message || "Failed to save product to server.");
           }
         });
       }
@@ -442,15 +453,12 @@ export function useActions() {
           .then((res) => {
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           })
           .catch((err) => {
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message;
-            emit();
+            setSyncStatus("error", (err as Error).message);
           });
       }
     }, []),
@@ -467,21 +475,17 @@ export function useActions() {
       if (typeof window !== "undefined") {
         debounceMutation(`pkg_${pkg.id}`, 250, async () => {
           try {
-            syncStatus = "syncing";
-            emit();
+            setSyncStatus("syncing", null);
             const res = await upsertPackageServerFn({
               data: { pkg, expectedRevision: serverRevision },
             });
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           } catch (err) {
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message || "Failed to save package to server.";
-            emit();
+            setSyncStatus("error", (err as Error).message || "Failed to save package to server.");
           }
         });
       }
@@ -496,15 +500,12 @@ export function useActions() {
           .then((res) => {
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           })
           .catch((err) => {
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message;
-            emit();
+            setSyncStatus("error", (err as Error).message);
           });
       }
     }, []),
@@ -530,15 +531,12 @@ export function useActions() {
           .then((res) => {
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           })
           .catch((err) => {
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message;
-            emit();
+            setSyncStatus("error", (err as Error).message);
           });
       }
     }, []),
@@ -566,21 +564,17 @@ export function useActions() {
       if (typeof window !== "undefined") {
         debounceMutation("workspace_settings", 300, async () => {
           try {
-            syncStatus = "syncing";
-            emit();
+            setSyncStatus("syncing", null);
             const res = await updateSettingsServerFn({
               data: { settings: patch, expectedRevision: serverRevision },
             });
             serverRevision = res.workspaceRevision;
             lastConfirmedServerSnapshot = state;
-            syncStatus = "idle";
-            lastSyncError = null;
+            setSyncStatus("idle", null);
             emit();
           } catch (err) {
             state = lastConfirmedServerSnapshot ?? prevSnapshot;
-            syncStatus = "error";
-            lastSyncError = (err as Error).message || "Failed to update settings.";
-            emit();
+            setSyncStatus("error", (err as Error).message || "Failed to update settings.");
           }
         });
       }

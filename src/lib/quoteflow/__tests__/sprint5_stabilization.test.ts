@@ -57,6 +57,8 @@ describe("QuoteFlow — Sprint 5 Stabilization: Shared Persistence & Secure Arch
       `.data/test_stab_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.db`,
     );
     process.env["QUOTEFLOW_DB_PATH"] = testDbPath;
+    process.env["QUOTEFLOW_ADMIN_PASSCODE"] = "stab-test-passcode";
+    process.env["QUOTEFLOW_SESSION_SECRET"] = "stab-test-secret-at-least-32-chars-long";
     getDb(testDbPath);
   });
 
