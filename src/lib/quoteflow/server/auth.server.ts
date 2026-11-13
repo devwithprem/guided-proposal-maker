@@ -125,7 +125,13 @@ export function clearLoginRateLimit(scopeKey: string, dbInstance?: DatabaseSync)
 }
 
 
-export function loadEnvFiles(): void {
+let envFilesLoaded = false;
+
+export function loadEnvFiles(force = false): void {
+  if ((envFilesLoaded && !force) || process.env["VITEST"]) {
+    return;
+  }
+  envFilesLoaded = true;
   // If already set in process.env, nothing to do
   if (process.env["QUOTEFLOW_ADMIN_PASSCODE"] && process.env["QUOTEFLOW_SESSION_SECRET"]) {
     return;

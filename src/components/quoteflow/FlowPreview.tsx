@@ -430,15 +430,67 @@ export function FlowPreview({
           </p>
 
           <div className="mt-8 space-y-6">
-            {stepFields.map((c) => (
-              <FieldRenderer
-                key={c.id}
-                component={c}
-                value={answers[c.variable!]}
-                errorMessage={fieldErrors[c.id]}
-                onChange={(v) => setAnswer(c.variable!, v, c.id)}
-              />
-            ))}
+            {step === 1 && flow.containers && flow.containers.length > 0 ? (
+              <>
+                {flow.containers.map((container) => {
+                  const containerFields = (container.children ?? [])
+                    .map((id: string) => stepFields.find((f: FlowComponent) => f.id === id))
+                    .filter((f): f is FlowComponent => Boolean(f));
+                  if (containerFields.length === 0) return null;
+
+                  const cols = container.columns ?? 1;
+                  const gridClass =
+                    cols === 2
+                      ? "grid grid-cols-1 sm:grid-cols-2 gap-4"
+                      : cols === 3
+                        ? "grid grid-cols-1 sm:grid-cols-3 gap-4"
+                        : "space-y-6";
+
+                  return (
+                    <div key={container.id} className={gridClass}>
+                      {containerFields.map((c: FlowComponent) => (
+                        <FieldRenderer
+                          key={c.id}
+                          component={c}
+                          value={answers[c.variable!]}
+                          errorMessage={fieldErrors[c.id]}
+                          onChange={(v) => setAnswer(c.variable!, v, c.id)}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+                {/* Render any orphaned fields not in a defined container */}
+                {(() => {
+                  const claimedIds = new Set(flow.containers.flatMap((c) => c.children ?? []));
+                  const orphans = stepFields.filter((f) => !claimedIds.has(f.id));
+                  if (orphans.length === 0) return null;
+                  return (
+                    <div className="space-y-6">
+                      {orphans.map((c) => (
+                        <FieldRenderer
+                          key={c.id}
+                          component={c}
+                          value={answers[c.variable!]}
+                          errorMessage={fieldErrors[c.id]}
+                          onChange={(v) => setAnswer(c.variable!, v, c.id)}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
+              </>
+            ) : (
+              stepFields.map((c) => (
+                <FieldRenderer
+                  key={c.id}
+                  component={c}
+                  value={answers[c.variable!]}
+                  errorMessage={fieldErrors[c.id]}
+                  onChange={(v) => setAnswer(c.variable!, v, c.id)}
+                />
+              ))
+            )}
             {stepFields.length === 0 && (
               <p className="text-[13.5px] text-muted-foreground">No questions on this step yet.</p>
             )}

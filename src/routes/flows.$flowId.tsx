@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Copy,
   GripVertical,
+  Maximize2,
   Play,
   Plus,
   Trash2,
@@ -313,46 +314,52 @@ function FlowBuilder() {
       {step === 1 && (
         <div className="flex flex-col w-full">
           {/* View Mode Toggle Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-sidebar/40 px-5 py-2">
-            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card p-1 text-[12px]">
-              <button
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-sidebar/40 px-5 py-2.5">
+            <div className="flex items-center gap-3">
+              <Button
                 type="button"
-                onClick={() => setBuilderView("canvas")}
-                className={cn(
-                  "rounded-md px-3 py-1 font-medium transition-colors",
-                  builderView === "canvas" ? "bg-brand text-brand-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                Canvas Editor
-              </button>
-              <button
-                type="button"
+                size="sm"
                 onClick={() => setBuilderView("visual")}
-                className={cn(
-                  "rounded-md px-3 py-1 font-medium transition-colors",
-                  builderView === "visual" ? "bg-brand text-brand-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
-                )}
+                className="h-8 gap-1.5 bg-brand px-3 text-[12.5px] font-medium text-brand-foreground hover:bg-brand/90"
               >
-                Visual Form Builder
-              </button>
+                <Maximize2 className="h-3.5 w-3.5" />
+                Open Visual Form Builder (Full Screen)
+              </Button>
+              <span className="text-[12px] text-muted-foreground hidden sm:inline">
+                Drag-and-drop questions, multi-column containers, and theme styling
+              </span>
             </div>
-            <span className="text-[12px] text-muted-foreground">
-              {builderView === "canvas"
-                ? "Drag & drop components, configure business variables and calculations"
-                : "Advanced drag-and-drop form builder powered by @devcode-tech/form-builder"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11.5px] text-muted-foreground hidden md:inline">
+                Quick list view below
+              </span>
+            </div>
           </div>
 
-          {builderView === "visual" ? (
-            <div className="p-5">
-              <ClientOnlyFormBuilder
-                flow={flow}
-                onSaveFlow={save}
-                onClose={() => setBuilderView("canvas")}
-              />
-            </div>
-          ) : (
-            <div className="grid w-full grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
+          {/* Logic & Pricing boundary guidance callout */}
+          <div className="mx-5 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-sidebar/30 px-3.5 py-2.5 text-[12.5px] text-muted-foreground">
+            <p>
+              <strong className="text-foreground">Form Structure &amp; Layout:</strong> Use the Visual Form Builder above to arrange questions and configure multi-column layouts. Rules, calculation formulas, and add-on pricing are managed in <strong className="text-foreground">Step 3 (Logic &amp; pricing)</strong>.
+            </p>
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => setStep(2)}
+              className="h-auto p-0 text-brand text-[12.5px]"
+            >
+              Go to Step 3 &rarr;
+            </Button>
+          </div>
+
+          {builderView === "visual" && (
+            <ClientOnlyFormBuilder
+              flow={flow}
+              onSaveFlow={save}
+              onClose={() => setBuilderView("canvas")}
+            />
+          )}
+
+          <div className="grid w-full grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
           {/* LEFT: component library */}
           <div className="hidden border-r border-border bg-sidebar/60 p-3 lg:block">
             <p className="qf-label mb-2">Components</p>
@@ -492,7 +499,6 @@ function FlowBuilder() {
             )}
           </div>
         </div>
-          )}
         </div>
       )}
 

@@ -1,3 +1,6 @@
+import type { FormDesign, LayoutContainer } from "@devcode-tech/form-builder";
+export type { FormDesign, LayoutContainer };
+
 export type QuestionType =
   | "text"
   | "number"
@@ -155,6 +158,8 @@ export interface Flow {
   basePackageId?: string | undefined;
   settings: FlowSettings;
   submission: SubmissionSettings;
+  containers?: LayoutContainer[] | undefined;
+  design?: FormDesign | undefined;
 }
 
 export interface Product {

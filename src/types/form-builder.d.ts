@@ -31,42 +31,42 @@ declare module "@devcode-tech/form-builder" {
 
   export interface LayoutContainer {
     id: string;
-    type?: string;
-    columns?: number;
+    type?: string | undefined;
+    columns?: number | undefined;
+    columnGap?: string | undefined;
+    rowGap?: string | undefined;
     children: string[];
-    fields?: string[];
-    leftFields?: string[];
-    rightFields?: string[];
-    [key: string]: unknown;
+    fields?: string[] | undefined;
+    leftFields?: string[] | undefined;
+    rightFields?: string[] | undefined;
   }
 
   export interface FormDesign {
-    backgroundColor?: string;
-    fontFamily?: string;
-    fontSize?: string;
-    labelColor?: string;
-    inputTextColor?: string;
-    helperColor?: string;
-    inputBorderColor?: string;
-    brandColor?: string;
-    inputFocusColor?: string;
-    inputBackgroundColor?: string;
+    backgroundColor?: string | undefined;
+    fontFamily?: string | undefined;
+    fontSize?: string | undefined;
+    labelColor?: string | undefined;
+    inputTextColor?: string | undefined;
+    helperColor?: string | undefined;
+    inputBorderColor?: string | undefined;
+    brandColor?: string | undefined;
+    inputFocusColor?: string | undefined;
+    inputBackgroundColor?: string | undefined;
     spacing?: {
-      container?: string;
-      fields?: string;
-      columnGap?: string;
-      rowGap?: string;
-      fieldSpacing?: string;
-    };
+      container?: string | undefined;
+      fields?: string | undefined;
+      columnGap?: string | undefined;
+      rowGap?: string | undefined;
+      fieldSpacing?: string | undefined;
+    } | undefined;
     submitButton?: {
-      text?: string;
-      backgroundColor?: string;
-      textColor?: string;
-      hoverBackgroundColor?: string;
-      hoverTextColor?: string;
-      hoverBorderColor?: string;
-    };
-    [key: string]: unknown;
+      text?: string | undefined;
+      backgroundColor?: string | undefined;
+      textColor?: string | undefined;
+      hoverBackgroundColor?: string | undefined;
+      hoverTextColor?: string | undefined;
+      hoverBorderColor?: string | undefined;
+    } | undefined;
   }
 
   export interface FormBuilderSaveData {
@@ -88,6 +88,13 @@ declare module "@devcode-tech/form-builder" {
     [key: string]: unknown;
   }
 
+  export interface FormBuilderRef {
+    saveOrUpdate: () => Promise<unknown>;
+    hasUnsavedChanges?: () => boolean;
+    confirmCanLeave?: (confirmLeaveFn?: (message: string) => boolean) => boolean;
+    [key: string]: unknown;
+  }
+
   export interface EditableFormBuilderProps {
     initialFormId?: string | undefined;
     onDirtyStateChange?: ((isDirty: boolean) => void) | undefined;
@@ -98,7 +105,7 @@ declare module "@devcode-tech/form-builder" {
     workspaceBrandColor?: string | undefined;
     enableAutoSave?: boolean | undefined;
     onAutoSave?: ((formId: string, data: FormBuilderSaveData) => Promise<unknown> | unknown) | undefined;
-    ref?: React.Ref<unknown> | undefined;
+    ref?: React.Ref<FormBuilderRef> | undefined;
     [key: string]: unknown;
   }
 

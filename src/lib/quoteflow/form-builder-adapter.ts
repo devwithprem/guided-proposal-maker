@@ -246,6 +246,156 @@ export function formFieldDataToComponent(
 }
 
 /**
+ * Normalizes containers and assigns any orphaned fields to a deterministic
+ * container so that fields appear reliably in both edit canvas and preview mode.
+ * Aligns with Tragami's reference layout container normalization.
+ */
+export function normalizeContainersAndOrphans(
+  fields: FormFieldData[],
+  existingContainers: LayoutContainer[] = [],
+): LayoutContainer[] {
+  const allFieldIds = fields.map((f) => f.id);
+  const claimedFieldIds = new Set<string>();
+
+  const sanitizedContainers: LayoutContainer[] = [];
+  for (const ctr of existingContainers) {
+    if (!ctr || !ctr.id) continue;
+    const uniqueChildren: string[] = [];
+    const rawChildren = Array.isArray(ctr.children) ? ctr.children : [];
+    for (const childId of rawChildren) {
+      if (typeof childId === "string" && allFieldIds.includes(childId) && !claimedFieldIds.has(childId)) {
+        claimedFieldIds.add(childId);
+        uniqueChildren.push(childId);
+      }
+    }
+    sanitizedContainers.push({
+      ...ctr,
+      type: ctr.type || "single-column",
+      columns: ctr.columns || 1,
+      children: uniqueChildren,
+    });
+  }
+
+  const orphanedFieldIds = allFieldIds.filter((id) => !claimedFieldIds.has(id));
+  if (orphanedFieldIds.length > 0) {
+    const fallbackContainer: LayoutContainer = {
+      id: "container_fallback_orphaned",
+      type: "single-column",
+      columns: 1,
+      children: orphanedFieldIds,
+    };
+    sanitizedContainers.push(fallbackContainer);
+  }
+
+  return sanitizedContainers;
+}
+
+export interface FieldDependency {
+  type: "rule_condition" | "rule_action" | "calculation";
+  id: string;
+  name: string;
+  description: string;
+}
+
+/**
+ * Detects any rule conditions, rule actions, or calculation formulas that depend on
+ * a given component's ID or variable name.
+ */
+export function findFieldDependencies(
+  flow: Flow,
+  fieldIdOrVariable: string,
+): FieldDependency[] {
+  const deps: FieldDependency[] = [];
+  const target = fieldIdOrVariable.trim();
+  if (!target) return deps;
+
+  const comp = [...(flow.contactFields ?? []), ...flow.components].find(
+    (c) => c.id === target || c.variable === target,
+  );
+  const targetId = comp ? comp.id : target;
+  const targetVar = comp?.variable ? comp.variable : target;
+
+  for (const rule of flow.rules ?? []) {
+    for (const cond of rule.conditions ?? []) {
+      if (cond && (cond.variable === targetVar || cond.variable === targetId)) {
+        deps.push({
+          type: "rule_condition",
+          id: rule.id,
+          name: rule.name || "Rule Condition",
+          description: `Rule "${rule.name}" condition references variable "${cond.variable}".`,
+        });
+      }
+    }
+    for (const action of rule.actions ?? []) {
+      if (
+        (action.targetId && (action.targetId === targetId || action.targetId === targetVar)) ||
+        (action.variable && (action.variable === targetVar || action.variable === targetId))
+      ) {
+        deps.push({
+          type: "rule_action",
+          id: rule.id,
+          name: rule.name || "Rule Action",
+          description: `Rule "${rule.name}" action targets "${action.targetId || action.variable}".`,
+        });
+      }
+    }
+  }
+
+  for (const compItem of flow.components) {
+    if (compItem.calculation) {
+      for (const term of compItem.calculation.terms ?? []) {
+        if (term.variable === targetVar || term.variable === targetId) {
+          deps.push({
+            type: "calculation",
+            id: compItem.id,
+            name: compItem.calculation.name || compItem.label || "Calculation",
+            description: `Calculation "${compItem.calculation.name}" references variable "${term.variable}".`,
+          });
+        }
+      }
+    }
+  }
+
+  return deps;
+}
+
+export interface FieldConflict {
+  fieldId: string;
+  label: string;
+  variable?: string | undefined;
+  dependencies: FieldDependency[];
+}
+
+export function validateFlowFieldDeletions(
+  flow: Flow,
+  incomingFieldIds: Set<string>,
+): {
+  canDelete: boolean;
+  conflicts: FieldConflict[];
+} {
+  const currentQuestions = getCustomerQuestionComponents(flow);
+  const deletedQuestions = currentQuestions.filter((q) => !incomingFieldIds.has(q.id));
+  const conflicts: FieldConflict[] = [];
+
+  for (const q of deletedQuestions) {
+    const deps = findFieldDependencies(flow, q.id);
+    if (deps.length > 0) {
+      conflicts.push({
+        fieldId: q.id,
+        label: q.label,
+        variable: q.variable,
+        dependencies: deps,
+      });
+    }
+  }
+
+  return {
+    canDelete: conflicts.length === 0,
+    conflicts,
+  };
+}
+
+/**
  * Converts a QuoteFlow `Flow` into a full Form Builder schema object
  * with fields, containers, and theme design.
  */
@@ -259,16 +409,19 @@ export function toFormBuilderSchema(
 
   const fields = componentsToConvert.map(componentToFormFieldData);
   const containerId = `container_${flow.id}`;
-  const containers: LayoutContainer[] = [
-    {
-      id: containerId,
-      type: "single-column",
-      columns: 1,
-      children: fields.map((f) => f.id),
-    },
-  ];
+  const containers: LayoutContainer[] =
+    flow.containers && flow.containers.length > 0
+      ? normalizeContainersAndOrphans(fields, flow.containers)
+      : [
+          {
+            id: containerId,
+            type: "single-column",
+            columns: 1,
+            children: fields.map((f) => f.id),
+          },
+        ];
 
-  const design: FormDesign = {
+  const design: FormDesign = flow.design ?? {
     backgroundColor: "#ffffff",
     fontFamily: "font-sans",
     fontSize: "text-base",
@@ -316,9 +469,21 @@ export function toFormBuilderSchema(
  */
 export function mergeFormBuilderDataIntoFlow(
   existingFlow: Flow,
-  data: { fields: FormFieldData[]; containers?: LayoutContainer[] },
+  data: {
+    fields?: FormFieldData[];
+    containers?: LayoutContainer[];
+    design?: FormDesign;
+    schema?: {
+      fields?: FormFieldData[];
+      containers?: LayoutContainer[];
+      design?: FormDesign;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  },
 ): Flow {
-  const incomingFields = data.fields ?? [];
+  const incomingFields: FormFieldData[] =
+    data.fields ?? data.schema?.fields ?? (data as any)?.structure?.steps?.[0]?.fields ?? [];
   const incomingById = new Map(incomingFields.map((f) => [f.id, f]));
   const contactFieldIds = new Set((existingFlow.contactFields ?? []).map((c) => c.id));
 
@@ -330,47 +495,76 @@ export function mergeFormBuilderDataIntoFlow(
 
   // 2. Identify fields intended for components
   const existingComponentsById = new Map(existingFlow.components.map((c) => [c.id, c]));
-  const updatedComponents: FlowComponent[] = [];
 
   // Determine field order from containers if available, otherwise from fields array
+  const rawContainers: LayoutContainer[] =
+    data.containers ??
+    data.schema?.containers ??
+    (data as any)?.structure?.containers ??
+    [];
+
   let orderedFieldIds: string[] = [];
-  if (data.containers && data.containers.length > 0) {
-    orderedFieldIds = data.containers.flatMap((c) => c.children ?? []);
+  if (rawContainers && rawContainers.length > 0) {
+    orderedFieldIds = rawContainers.flatMap((c) => c.children ?? []);
   }
-  if (orderedFieldIds.length === 0) {
-    orderedFieldIds = incomingFields.map((f) => f.id);
-  }
-
-  // Preserve non-input components and update existing questions
-  for (const comp of existingFlow.components) {
-    if (NON_INPUT_COMPONENT_TYPES.has(comp.type)) {
-      updatedComponents.push(comp);
-      continue;
-    }
-    const incoming = incomingById.get(comp.id);
-    if (incoming) {
-      updatedComponents.push(formFieldDataToComponent(incoming, comp));
-    } else {
-      updatedComponents.push(comp);
+  const coveredFieldIds = new Set(orderedFieldIds);
+  for (const f of incomingFields) {
+    if (!coveredFieldIds.has(f.id)) {
+      orderedFieldIds.push(f.id);
+      coveredFieldIds.add(f.id);
     }
   }
 
-  // Append new fields added through the Form Builder
+  // Build the list of updated question components according to orderedFieldIds
+  const updatedQuestionComponents: FlowComponent[] = [];
   for (const fieldId of orderedFieldIds) {
     if (contactFieldIds.has(fieldId)) continue;
-    if (!existingComponentsById.has(fieldId)) {
-      const fieldData = incomingById.get(fieldId);
-      if (fieldData) {
-        updatedComponents.push(formFieldDataToComponent(fieldData));
-      }
+    const incomingField = incomingById.get(fieldId);
+    if (!incomingField) continue;
+
+    const existingComp = existingComponentsById.get(fieldId);
+    if (existingComp) {
+      updatedQuestionComponents.push(formFieldDataToComponent(incomingField, existingComp));
+    } else {
+      updatedQuestionComponents.push(formFieldDataToComponent(incomingField));
     }
   }
 
-  return {
+  // Preserve non-input components (calculations, standalone variables, price-summaries, etc.)
+  const nonInputComponents = existingFlow.components.filter((comp) =>
+    NON_INPUT_COMPONENT_TYPES.has(comp.type),
+  );
+
+  const updatedComponents = [...updatedQuestionComponents, ...nonInputComponents];
+
+  // Containers normalization
+  let normalizedContainers: LayoutContainer[] | undefined = undefined;
+  if (rawContainers.length > 0) {
+    normalizedContainers = normalizeContainersAndOrphans(incomingFields, rawContainers);
+  } else if (existingFlow.containers && existingFlow.containers.length > 0) {
+    normalizedContainers = normalizeContainersAndOrphans(incomingFields, existingFlow.containers);
+  }
+
+  const rawDesign: FormDesign | undefined =
+    data.design ??
+    data.schema?.design ??
+    (data as any)?.theme ??
+    existingFlow.design;
+
+  const result: Flow = {
     ...existingFlow,
     contactFields: updatedContactFields,
     components: updatedComponents,
   };
+
+  if (normalizedContainers !== undefined) {
+    result.containers = normalizedContainers;
+  }
+  if (rawDesign !== undefined) {
+    result.design = rawDesign;
+  }
+
+  return result;
 }
 
 /**

@@ -397,6 +397,36 @@ export function useActions() {
       }
     }, []),
 
+    upsertFlowAuthoritative: useCallback(async (flow: Flow): Promise<{ success: boolean; error?: string }> => {
+      const prevSnapshot = state;
+      const next = { ...flow, updatedAt: new Date().toISOString().slice(0, 10) };
+      setState((s) => {
+        const exists = s.flows.some((f) => f.id === flow.id);
+        return { ...s, flows: exists ? s.flows.map((f) => (f.id === flow.id ? next : f)) : [next, ...s.flows] };
+      });
+
+      if (typeof window !== "undefined") {
+        try {
+          setSyncStatus("syncing", null);
+          const res = await upsertFlowServerFn({
+            data: { flow: next, expectedRevision: serverRevision },
+          });
+          serverRevision = res.workspaceRevision;
+          lastConfirmedServerSnapshot = state;
+          setSyncStatus("idle", null);
+          emit();
+          return { success: true };
+        } catch (err) {
+          state = lastConfirmedServerSnapshot ?? prevSnapshot;
+          const msg = (err as Error).message || "Failed to save flow to server.";
+          setSyncStatus("error", msg);
+          emit();
+          return { success: false, error: msg };
+        }
+      }
+      return { success: true };
+    }, []),
+
     deleteFlow: useCallback((id: string) => {
       const prevSnapshot = state;
       setState((s) => ({ ...s, flows: s.flows.filter((f) => f.id !== id) }));
